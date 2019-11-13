@@ -41,8 +41,11 @@
 #ifndef  __ATMOSPHERE_H__
 #define __ATMOSPHERE_H__
 
+
+
 #include "texture_types.h"
 #include "atmosphere/definitions.h"
+#include "texture_buffer.h"
 #include <cuda.h>
 
 enum atmosphere_error_t {
@@ -58,6 +61,17 @@ enum atmosphere_error_t {
 class atmosphere {
 
 
+private:
+
+	#define kLambdaR 680.0
+	#define kLambdaG 550.0
+	#define kLambdaB 440.0
+
+	#define kLambdaMin 360
+	#define kLambdaMax 830
+
+
+
 public:
 	
 	atmosphere();
@@ -70,8 +84,36 @@ public:
 	atmosphere_error_t fill_scattering_texture();
 	atmosphere_error_t fill_irradiance_texture();
 
-private:
+
+public:
+
+	std::vector<double> m_wave_lengths;
+	std::vector<double> m_solar_irradiance;
 	
+	double m_sun_angular_radius;
+	double m_bottom_radius;
+	double m_top_radius;
+	
+	DensityProfileLayer* m_rayleigh_density;
+	std::vector<double> m_rayleigh_scattering;
+	
+	DensityProfileLayer* m_mie_density;
+	std::vector<double> m_mie_scattering;
+	std::vector<double> m_mie_extinction;
+	double m_mie_phase_function_g;
+	
+	std::vector<DensityProfileLayer*> m_absorption_density;
+	std::vector<double> m_absorption_extinction;
+	
+	double m_max_sun_zenith_angle;
+	double m_length_unit_in_meters;
+	LUMINANCE m_use_luminance;
+	inline int num_precomputed_wavelengths() { return m_use_luminance == LUMINANCE::PRECOMPUTED ? 15 : 3; }
+	bool m_combine_scattering_textures;
+	bool m_half_precision;
+
+
+	AtmosphereTextures atmosphere_textures;
 	AtmosphereParameters atmosphere_parameters;
 
 	CUfunction *transmittance_texture_function;
@@ -81,9 +123,8 @@ private:
 	float3 *transmittance_buffer;
 	float4 *scattering_buffer;
 	float3 *irradiance_buffer;
-
-	AtmosphereTextures atmosphere_textures;
-
+	   	 
+	   
 };
 
 #endif // ! __ATMOSPHERE_H__

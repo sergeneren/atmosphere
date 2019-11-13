@@ -6,76 +6,12 @@
 
 #define ALIGN(x)	__align__(x)
 
-
-/*
-#define Length float
-#define Wavelength float
-#define Angle float
-#define SolidAngle float
-#define Power float
-#define LuminousPower float
-
-#define Number float
-#define InverseLength float
-#define Area float
-#define Volume float
-#define NumberDensity float
-#define Irradiance float
-#define Radiance float
-#define SpectralPower float
-#define SpectralIrradiance float
-#define SpectralRadiance float
-#define SpectralRadianceDensity float
-#define ScatteringCoefficient float
-#define InverseSolidAngle float
-#define LuminousIntensity float
-#define Luminance float
-#define Illuminance float
-
-// A generic function from Wavelength to some other type.
-#define AbstractSpectrum float3
-// A function from Wavelength to Number.
-#define DimensionlessSpectrum float3
-// A function from Wavelength to SpectralPower.
-#define PowerSpectrum float3
-// A function from Wavelength to SpectralIrradiance.
-#define IrradianceSpectrum float3
-// A function from Wavelength to SpectralRadiance.
-#define RadianceSpectrum float3
-// A function from Wavelength to SpectralRadianceDensity.
-#define RadianceDensitySpectrum float3
-// A function from Wavelength to ScaterringCoefficient.
-#define ScatteringSpectrum float3
-
-// A position in 3D (3 length values).
-#define Position float3
-// A unit direction vector in 3D (3 unitless values).
-#define Direction float3
-// A vector of 3 luminance values.
-#define Luminance3 float3
-// A vector of 3 illuminance values.
-#define Illuminance3 float3
-*/
-
-/*
-<h3>Physical units</h3>
-
-<p>We can then define the units for our six base physical quantities:
-meter (m), nanometer (nm), radian (rad), steradian (sr), watt (watt) and lumen
-(lm):
-*/
-
 __device__ const float m = 1.0;
 __device__ const float nm = 1.0;
 __device__ const float rad = 1.0;
 __device__ const float sr = 1.0;
 __device__ const float watt = 1.0;
 __device__ const float lm = 1.0;
-
-/*
-<p>From which we can derive the units for some derived physical quantities,
-as well as some derived units (kilometer km, kilocandela kcd, degree deg):
-*/
 
 __device__ const float PI = 3.14159265358979323846;
 
@@ -146,6 +82,7 @@ struct ALIGN(16) AtmosphereTextures {
 	cudaTextureObject_t transmittance_texture;
 	cudaTextureObject_t scattering_texture;
 	cudaTextureObject_t irradiance_texture;
+	cudaTextureObject_t optional_single_mie_scattering_texture;
 
 };
 

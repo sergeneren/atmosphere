@@ -69,8 +69,6 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	constexpr double kSunSolidAngle = kPi * kSunAngularRadius * kSunAngularRadius;
 	constexpr double kLengthUnitInMeters = 1000.0;
 	
-	constexpr int kLambdaMin = 360;
-	constexpr int kLambdaMax = 830;
 	constexpr double kSolarIrradiance[48] = {
 	  1.11776, 1.14259, 1.01249, 1.14716, 1.72765, 1.73054, 1.6887, 1.61253,
 	  1.91198, 2.03474, 2.02042, 2.02212, 1.93377, 1.95809, 1.91686, 1.8298,
@@ -146,10 +144,6 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 
 
 }
-
-
-
-
 
 atmosphere::~atmosphere() {
 
