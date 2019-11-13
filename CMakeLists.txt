@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.8.0 FATAL_ERROR)
 project(ATMOSPHERE LANGUAGES CXX CUDA)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
+include(${CMAKE_SOURCE_DIR}/Helpers.cmake)
 
 ## Set output directories
 
@@ -29,7 +29,6 @@ set(SOURCE_FILES
 	${CUDA_SOURCES}
 	${SOURCE_CPP})
 	
-	
 ## Add custom build command for cuda files 
 
 find_program(CUDA_NVCC_EXECUTABLE nvcc)
@@ -40,10 +39,8 @@ _COMPILEPTX ( SOURCES ${CUDA_SOURCES}
 	INCLUDE "${CMAKE_CURRENT_SOURCE_DIR},${_VCPKG_INCLUDE_DIR},${CMAKE_CURRENT_SOURCE_DIR}/common,${CMAKE_CURRENT_SOURCE_DIR}/gpu_vdb" 
 	OPTIONS -arch=compute_30 -code=sm_30 --ptxas-options=-v -O3 --use_fast_math --maxrregcount=128)
 
-###################################################################
-	
-	
+###################################################################	
 
 add_executable(atmosphere ${SOURCE_FILES})
 
-target_compile_options(vdb_convert PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-gencode arch=compute_30,code=sm_30>)
+target_link_libraries(atmosphere cuda cudart)
