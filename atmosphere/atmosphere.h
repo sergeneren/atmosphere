@@ -82,7 +82,7 @@ public:
 
 	atmosphere_error_t init(bool , bool);
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
-	atmosphere_error_t recompute(float azimuth, float elevation, float exposure);
+	atmosphere_error_t precompute(float azimuth, float elevation, float exposure);
 	atmosphere_error_t fill_transmittance_texture();
 	atmosphere_error_t fill_scattering_texture();
 	atmosphere_error_t fill_irradiance_texture();
@@ -108,12 +108,14 @@ public:
 	std::vector<DensityProfileLayer*> m_absorption_density;
 	std::vector<double> m_absorption_extinction;
 	
+	std::vector<double> m_ground_albedo;
+
 	double m_max_sun_zenith_angle;
 	double m_length_unit_in_meters;
 	LUMINANCE m_use_luminance;
 	inline int num_precomputed_wavelengths() { return m_use_luminance == LUMINANCE::PRECOMPUTED ? 15 : 3; }
 	bool m_combine_scattering_textures;
-	bool m_half_precision;
+	bool m_half_precision = false;
 
 	TextureBuffer *m_texture_buffer;
 	AtmosphereTextures atmosphere_textures;

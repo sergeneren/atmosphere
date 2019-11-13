@@ -75,9 +75,6 @@ atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
 atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_ozone_) {
 
 	constexpr double kPi = 3.1415926;
-	constexpr double kSunAngularRadius = 0.00935 / 2.0;
-	constexpr double kSunSolidAngle = kPi * kSunAngularRadius * kSunAngularRadius;
-	constexpr double kLengthUnitInMeters = 1000.0;
 	
 	constexpr double kSolarIrradiance[48] = {
 	  1.11776, 1.14259, 1.01249, 1.14716, 1.72765, 1.73054, 1.6887, 1.61253,
@@ -101,7 +98,6 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	constexpr double kDobsonUnit = 2.687e20;
 	constexpr double kMaxOzoneNumberDensity = 300.0 * kDobsonUnit / 15000.0;
 	constexpr double kConstantSolarIrradiance = 1.5;
-	constexpr double kBottomRadius = 6360000.0;
 	constexpr double kTopRadius = 6420000.0;
 	constexpr double kRayleigh = 1.24062e-6;
 	constexpr double kRayleighScaleHeight = 8000.0f;
@@ -109,45 +105,59 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	constexpr double kMieAngstromAlpha = 0.0;
 	constexpr double kMieAngstromBeta = 5.328e-3;
 	constexpr double kMieSingleScatteringAlbedo = 0.9;
-	constexpr double kMiePhaseFunctionG = 0.8;
 	constexpr double kGroundAlbedo = 0.1;
-	const double max_sun_zenith_angle =	 102.0 / 180.0 * kPi;
-
-	DensityProfileLayer rayleigh_layer(0.0f, 1.0f, -1.0f / kRayleighScaleHeight, 0.0f, 0.0f);
-	DensityProfileLayer mie_layer(0.0f, 1.0f, -1.0f / kMieScaleHeight, 0.0f, 0.0f);
 	
-	std::vector<DensityProfileLayer> ozone_density;
-	ozone_density.push_back(
-		DensityProfileLayer(25000.0f, 0.0f, 0.0f, 1.0f / 15000.0f, -2.0f / 3.0f));
-	ozone_density.push_back(
-		DensityProfileLayer(0.0f, 0.0f, 0.0f, -1.0f / 15000.0f, 8.0f / 3.0f));
-
-	std::vector<double> wavelengths;
-	std::vector<double> solar_irradiance;
-	std::vector<double> rayleigh_scattering;
-	std::vector<double> mie_scattering;
-	std::vector<double> mie_extinction;
-	std::vector<double> absorption_extinction;
-	std::vector<double> ground_albedo;
-
+	m_absorption_density.push_back(new DensityProfileLayer(25000.0f, 0.0f, 0.0f, 1.0f / 15000.0f, -2.0f / 3.0f));
+	m_absorption_density.push_back(new DensityProfileLayer(0.0f, 0.0f, 0.0f, -1.0f / 15000.0f, 8.0f / 3.0f));
 
 	for (int l = kLambdaMin; l <= kLambdaMax; l += 10) {
 		double lambda = static_cast<double>(l) * 1e-3;  // micro-meters
 		double mie =
 			kMieAngstromBeta / kMieScaleHeight * pow(lambda, -kMieAngstromAlpha);
-		wavelengths.push_back(l);
+		m_wave_lengths.push_back(l);
 		if (use_constant_solar_spectrum_) {
-			solar_irradiance.push_back(kConstantSolarIrradiance);
+			m_solar_irradiance.push_back(kConstantSolarIrradiance);
 		}
 		else {
-			solar_irradiance.push_back(kSolarIrradiance[(l - kLambdaMin) / 10]);
+			m_solar_irradiance.push_back(kSolarIrradiance[(l - kLambdaMin) / 10]);
 		}
-		rayleigh_scattering.push_back(kRayleigh * pow(lambda, -4));
-		mie_scattering.push_back(mie * kMieSingleScatteringAlbedo);
-		mie_extinction.push_back(mie);
-		absorption_extinction.push_back(use_ozone_ ? kMaxOzoneNumberDensity * kOzoneCrossSection[(l - kLambdaMin) / 10] :	0.0);
-		ground_albedo.push_back(kGroundAlbedo);
+		m_rayleigh_scattering.push_back(kRayleigh * pow(lambda, -4));
+		m_mie_scattering.push_back(mie * kMieSingleScatteringAlbedo);
+		m_mie_extinction.push_back(mie);
+		m_absorption_extinction.push_back(use_ozone_ ? kMaxOzoneNumberDensity * kOzoneCrossSection[(l - kLambdaMin) / 10] :	0.0);
+		m_ground_albedo.push_back(kGroundAlbedo);
 	}
+
+	m_half_precision = false;
+	m_combine_scattering_textures = true;
+	m_sun_angular_radius = 0.00935 / 2.0;
+	m_bottom_radius = 6360000.0f;
+	m_top_radius = 6420000.0f;
+	m_rayleigh_density = new DensityProfileLayer(0.0f, 1.0f, -1.0f / kRayleighScaleHeight, 0.0f, 0.0f);
+	m_mie_density = new DensityProfileLayer(0.0f, 1.0f, -1.0f / kMieScaleHeight, 0.0f, 0.0f);
+	m_mie_phase_function_g = 0.8;
+	m_max_sun_zenith_angle = 102.0 / 180.0 * kPi;
+	m_length_unit_in_meters = 1000.0;
+
+	int num_scattering_orders = 4;
+
+	m_texture_buffer = new TextureBuffer(m_half_precision);
+
+
+	// Start precomputation
+
+	if (num_precomputed_wavelengths() <= 3) {
+
+
+	}
+	else {
+
+
+
+
+
+	}
+
 
 
 
@@ -169,8 +179,6 @@ atmosphere::~atmosphere() {
 }
 
 atmosphere::atmosphere() {
-
-	m_texture_buffer = new TextureBuffer(m_half_precision);
 
 	transmittance_function = new CUfunction;
 	direct_irradiance_function = new CUfunction;
