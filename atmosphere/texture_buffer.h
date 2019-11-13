@@ -2,6 +2,10 @@
 #ifndef __TEXTURE_BUFFER_H__
 #define __TEXTURE_BUFFER_H__
 
+#include "texture_types.h"
+#include "driver_types.h"
+
+
 struct TextureBuffer {
 
 	cudaTextureObject_t m_delta_irradiance_texture;
