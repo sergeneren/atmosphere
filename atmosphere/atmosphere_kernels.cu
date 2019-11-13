@@ -1025,72 +1025,57 @@ __device__  float3 GetSunAndSkyIrradiance(
 
 
 
-extern "C" __global__ void fill_transmittance_buffer(
-	const AtmosphereParameters kernel_params, 
-	const int width, const int height) {
-
+extern "C" __global__ void calculate_transmittance(const int width, const int height) {
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 	const unsigned int idx = y * width + x;
-
-	//calculate direction
-
-	float azimuth = float(x) / float(width) * float(PI) * 2.0f;
-	float elevation = float(y) / float(height) * float(PI);
-
-	float3 pos = make_float3(0.0f, 0.0f, 0.0f);
-	pos.y += 1000 + 6360e3f;
-	float3 dir = make_float3(sinf(elevation) * cosf(azimuth), cosf(elevation), sinf(elevation) * sinf(azimuth)); // polar to cartesian 
-	
-
 
 }
 
-
-extern "C" __global__ void fill_scattering_buffer(
-	const AtmosphereParameters kernel_params, 
-	const cudaTextureObject_t transmittance_texture, 
-	const int width, const int height) {
-
+extern "C" __global__ void calculate_direct_irradiance(const int width, const int height){
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 	const unsigned int idx = y * width + x;
 
-	//calculate direction
-
-	float azimuth = float(x) / float(width) * float(PI) * 2.0f;
-	float elevation = float(y) / float(height) * float(PI);
-
-	float3 pos = make_float3(0.0f, 0.0f, 0.0f);
-	pos.y += 1000 + 6360e3f;
-	float3 dir = make_float3(sinf(elevation) * cosf(azimuth), cosf(elevation), sinf(elevation) * sinf(azimuth)); // polar to cartesian 
-	
 }
 
-extern "C" __global__ void fill_irradiance_buffer(
-	const AtmosphereParameters kernel_params, 
-	const cudaTextureObject_t transmittance_texture, 
-	const cudaTextureObject_t scattering_texture, 
-	const int width, const int height) {
-
+extern "C" __global__ void calculate_indirect_irradiance(const int width, const int height){
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= width || y >= height) return;
 	const unsigned int idx = y * width + x;
 
-	//calculate direction
+}
 
-	float azimuth = float(x) / float(width) * float(PI) * 2.0f;
-	float elevation = float(y) / float(height) * float(PI);
+extern "C" __global__ void calculate_multiple_scattering(const int width, const int height){
 
-	float3 pos = make_float3(0.0f, 0.0f, 0.0f);
-	pos.y += 1000 + 6360e3f;
-	float3 dir = make_float3(sinf(elevation) * cosf(azimuth), cosf(elevation), sinf(elevation) * sinf(azimuth)); // polar to cartesian 
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	if (x >= width || y >= height) return;
+	const unsigned int idx = y * width + x;
+
+}
+
+extern "C" __global__ void calculate__scattering_density(const int width, const int height){
+
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	if (x >= width || y >= height) return;
+	const unsigned int idx = y * width + x;
+
+}
+
+extern "C" __global__ void calculate_single_scattering(const int width, const int height){
+	
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	if (x >= width || y >= height) return;
+	const unsigned int idx = y * width + x;
 
 }
 

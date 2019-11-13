@@ -48,14 +48,24 @@
 atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
 
 	CUresult error;
-	error = cuModuleGetFunction(transmittance_texture_function, cuda_module, "fill_transmittance_buffer");
+	error = cuModuleGetFunction(transmittance_function, cuda_module, "calculate_transmittance");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
-	error = cuModuleGetFunction(scattering_texture_function, cuda_module, "fill_scattering_buffer");
+	error = cuModuleGetFunction(direct_irradiance_function, cuda_module, "calculate_direct_irradiance");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
-
-	error = cuModuleGetFunction(irradiance_texture_function, cuda_module, "fill_irradiance_buffer");
+	
+	error = cuModuleGetFunction(indirect_irradiance_function, cuda_module, "calculate_indirect_irradiance");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
+	
+	error = cuModuleGetFunction(multiple_scattering_function, cuda_module, "calculate_multiple_scattering");
+	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
+	
+	error = cuModuleGetFunction(scattering_density_function, cuda_module, "calculate__scattering_density");
+	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
+	
+	error = cuModuleGetFunction(single_scattering_function, cuda_module, "calculate_single_scattering");
+	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
+	
 	
 	return ATMO_NO_ERR;
 
@@ -94,8 +104,8 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	constexpr double kBottomRadius = 6360000.0;
 	constexpr double kTopRadius = 6420000.0;
 	constexpr double kRayleigh = 1.24062e-6;
-	constexpr double kRayleighScaleHeight = 8000.0;
-	constexpr double kMieScaleHeight = 1200.0;
+	constexpr double kRayleighScaleHeight = 8000.0f;
+	constexpr double kMieScaleHeight = 1200.0f;
 	constexpr double kMieAngstromAlpha = 0.0;
 	constexpr double kMieAngstromBeta = 5.328e-3;
 	constexpr double kMieSingleScatteringAlbedo = 0.9;
@@ -103,14 +113,14 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	constexpr double kGroundAlbedo = 0.1;
 	const double max_sun_zenith_angle =	 102.0 / 180.0 * kPi;
 
-	DensityProfileLayer rayleigh_layer(0.0, 1.0, -1.0 / kRayleighScaleHeight, 0.0, 0.0);
-	DensityProfileLayer mie_layer(0.0, 1.0, -1.0 / kMieScaleHeight, 0.0, 0.0);
+	DensityProfileLayer rayleigh_layer(0.0f, 1.0f, -1.0f / kRayleighScaleHeight, 0.0f, 0.0f);
+	DensityProfileLayer mie_layer(0.0f, 1.0f, -1.0f / kMieScaleHeight, 0.0f, 0.0f);
 	
 	std::vector<DensityProfileLayer> ozone_density;
 	ozone_density.push_back(
-		DensityProfileLayer(25000.0, 0.0, 0.0, 1.0 / 15000.0, -2.0 / 3.0));
+		DensityProfileLayer(25000.0f, 0.0f, 0.0f, 1.0f / 15000.0f, -2.0f / 3.0f));
 	ozone_density.push_back(
-		DensityProfileLayer(0.0, 0.0, 0.0, -1.0 / 15000.0, 8.0 / 3.0));
+		DensityProfileLayer(0.0f, 0.0f, 0.0f, -1.0f / 15000.0f, 8.0f / 3.0f));
 
 	std::vector<double> wavelengths;
 	std::vector<double> solar_irradiance;
@@ -141,21 +151,31 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 
 
 
-
+	return ATMO_NO_ERR;
 
 }
 
 atmosphere::~atmosphere() {
 
-	transmittance_texture_function = nullptr;
-	scattering_texture_function = nullptr;
-	irradiance_texture_function = nullptr;
+	transmittance_function = nullptr;
+	direct_irradiance_function = nullptr;
+	indirect_irradiance_function = nullptr;
+	multiple_scattering_function = nullptr;
+	scattering_density_function = nullptr;
+	single_scattering_function = nullptr;
+
+	delete m_texture_buffer;
 
 }
 
 atmosphere::atmosphere() {
 
-	transmittance_texture_function = new CUfunction;
-	scattering_texture_function = new CUfunction;
-	irradiance_texture_function = new CUfunction;
+	m_texture_buffer = new TextureBuffer(m_half_precision);
+
+	transmittance_function = new CUfunction;
+	direct_irradiance_function = new CUfunction;
+	indirect_irradiance_function = new CUfunction;
+	multiple_scattering_function = new CUfunction;
+	scattering_density_function = new CUfunction;
+	single_scattering_function = new CUfunction;
 }

@@ -42,11 +42,14 @@
 #define __ATMOSPHERE_H__
 
 
-
-#include "texture_types.h"
-#include "atmosphere/definitions.h"
-#include "texture_buffer.h"
 #include <cuda.h>
+#include "texture_types.h"
+
+#include <vector>
+
+#include "atmosphere/definitions.h"
+#include "atmosphere/texture_buffer.h"
+#include "atmosphere/constants.h"
 
 enum atmosphere_error_t {
 
@@ -112,13 +115,16 @@ public:
 	bool m_combine_scattering_textures;
 	bool m_half_precision;
 
-
+	TextureBuffer *m_texture_buffer;
 	AtmosphereTextures atmosphere_textures;
 	AtmosphereParameters atmosphere_parameters;
 
-	CUfunction *transmittance_texture_function;
-	CUfunction *scattering_texture_function;
-	CUfunction *irradiance_texture_function;
+	CUfunction *transmittance_function;
+	CUfunction *direct_irradiance_function;
+	CUfunction *indirect_irradiance_function;
+	CUfunction *multiple_scattering_function;
+	CUfunction *scattering_density_function;
+	CUfunction *single_scattering_function;
 
 	float3 *transmittance_buffer;
 	float4 *scattering_buffer;

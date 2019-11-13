@@ -13,20 +13,20 @@ __device__ const float sr = 1.0;
 __device__ const float watt = 1.0;
 __device__ const float lm = 1.0;
 
-__device__ const float PI = 3.14159265358979323846;
+__device__ const float PI = 3.14159265358979323846f;
 
 __device__ constexpr float km() { return 1000.0 * m; }
 __device__ constexpr float m2() { return m * m; }
 __device__ constexpr float m3() { return m * m * m; }
 __device__ constexpr float pi() { return PI / rad; }
-__device__ constexpr float deg() { return pi() / 180.0; }
+__device__ constexpr float deg() { return pi() / 180.0f; }
 __device__ constexpr float watt_per_square_meter() { return watt / m2() ; }
 __device__ constexpr float watt_per_square_meter_per_sr() { return watt / (m2() * sr); }
 __device__ constexpr float watt_per_square_meter_per_nm() { return watt / (m2() * nm); }
 __device__ constexpr float watt_per_square_meter_per_sr_per_nm() { return watt / (m2() * sr * nm); }
 __device__ constexpr float watt_per_cubic_meter_per_sr_per_nm() { return watt / (m3() * sr * nm); }
 __device__ constexpr float cd() { return lm / sr; }
-__device__ constexpr float kcd() { return 1000.0 * cd(); }
+__device__ constexpr float kcd() { return 1000.0f * cd(); }
 __device__ constexpr float cd_per_square_meter() { return cd() / m2(); }
 __device__ constexpr float kcd_per_square_meter() { return kcd() / m2(); }
 
