@@ -43,6 +43,8 @@
 #include "atmosphere/atmosphere.h"
 #include "atmosphere/constants.h"
 
+#include "helper_math.h"
+
 
 // Functions that hold the texture calculation kernels from atmosphere_kernels.ptx file
 atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
@@ -70,6 +72,110 @@ atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
 	return ATMO_NO_ERR;
 
 }
+
+
+double atmosphere::coeff(double lambda, int component) {
+
+	double x = cie_color_matching_function_table_value(lambda, 1);
+	double y = cie_color_matching_function_table_value(lambda, 2);
+	double z = cie_color_matching_function_table_value(lambda, 3);
+	double sRGB = XYZ_TO_SRGB[component * 3 + 0] * x + XYZ_TO_SRGB[component * 3 + 1] * y + XYZ_TO_SRGB[component * 3 + 2] * z;
+
+	return sRGB;
+	   
+}
+
+void atmosphere::sky_sun_radiance_to_luminance(float3& sky_spectral_radiance_to_luminance, float3& sun_spectral_radiance_to_luminance) {
+
+	bool precompute_illuminance = num_precomputed_wavelengths() > 3;
+	double sky_k_r, sky_k_g, sky_k_b;
+
+	if (precompute_illuminance)
+		sky_k_r = sky_k_g = sky_k_b = static_cast<double>(MAX_LUMINOUS_EFFICACY);
+	else
+		compute_spectral_radiance_to_luminance_factors(m_wave_lengths, m_solar_irradiance, -3, sky_k_r, sky_k_g, sky_k_b);
+
+	// Compute the values for the SUN_RADIANCE_TO_LUMINANCE constant.
+	double sun_k_r, sun_k_g, sun_k_b;
+	compute_spectral_radiance_to_luminance_factors(m_wave_lengths, m_solar_irradiance, 0, sun_k_r, sun_k_g, sun_k_b);
+
+	sky_spectral_radiance_to_luminance = make_float3((float)sky_k_r, (float)sky_k_g, (float)sky_k_b);
+	sun_spectral_radiance_to_luminance = make_float3((float)sun_k_r, (float)sun_k_g, (float)sun_k_b);
+	   
+}
+
+double atmosphere::cie_color_matching_function_table_value(double wavelength, int column) {
+
+	if (wavelength <= kLambdaMin || wavelength >= kLambdaMax)
+		return 0.0;
+
+	double u = (wavelength - kLambdaMin) / 5.0;
+	int row = (int)floor(u);
+
+	u -= row;
+	return CIE_2_DEG_COLOR_MATCHING_FUNCTIONS[4 * row + column] * (1.0 - u) + CIE_2_DEG_COLOR_MATCHING_FUNCTIONS[4 * (row + 1) + column] * u;
+
+}
+
+double atmosphere::interpolate(const std::vector<double>& wavelengths, const std::vector<double>& wavelength_function, double wavelength)
+{
+	if (wavelength < wavelengths[0])
+		return wavelength_function[0];
+
+	for (int i = 0; i < wavelengths.size() - 1; ++i)
+	{
+		if (wavelength < wavelengths[i + 1])
+		{
+			double u = (wavelength - wavelengths[i]) / (wavelengths[i + 1] - wavelengths[i]);
+			return wavelength_function[i] * (1.0 - u) + wavelength_function[i + 1] * u;
+		}
+	}
+
+	return wavelength_function[wavelength_function.size() - 1];
+}
+
+void atmosphere::compute_spectral_radiance_to_luminance_factors(const std::vector<double>& wavelengths, const std::vector<double>& solar_irradiance, double lambda_power, double & k_r, double & k_g, double & k_b)
+{
+	k_r = 0.0;
+	k_g = 0.0;
+	k_b = 0.0;
+	double solar_r = interpolate(wavelengths, solar_irradiance, kLambdaR);
+	double solar_g = interpolate(wavelengths, solar_irradiance, kLambdaG);
+	double solar_b = interpolate(wavelengths, solar_irradiance, kLambdaB);
+	int dlambda = 1;
+
+	for (int lambda = kLambdaMin; lambda < kLambdaMax; lambda += dlambda)
+	{
+		double x_bar = cie_color_matching_function_table_value(lambda, 1);
+		double y_bar = cie_color_matching_function_table_value(lambda, 2);
+		double z_bar = cie_color_matching_function_table_value(lambda, 3);
+
+		const double* xyz2srgb = &XYZ_TO_SRGB[0];
+		double r_bar = xyz2srgb[0] * x_bar + xyz2srgb[1] * y_bar + xyz2srgb[2] * z_bar;
+		double g_bar = xyz2srgb[3] * x_bar + xyz2srgb[4] * y_bar + xyz2srgb[5] * z_bar;
+		double b_bar = xyz2srgb[6] * x_bar + xyz2srgb[7] * y_bar + xyz2srgb[8] * z_bar;
+		double irradiance = interpolate(wavelengths, solar_irradiance, lambda);
+
+		k_r += r_bar * irradiance / solar_r * pow(lambda / kLambdaR, lambda_power);
+		k_g += g_bar * irradiance / solar_g * pow(lambda / kLambdaG, lambda_power);
+		k_b += b_bar * irradiance / solar_b * pow(lambda / kLambdaB, lambda_power);
+	}
+
+	k_r *= static_cast<double>(MAX_LUMINOUS_EFFICACY) * dlambda;
+	k_g *= static_cast<double>(MAX_LUMINOUS_EFFICACY) * dlambda;
+	k_b *= static_cast<double>(MAX_LUMINOUS_EFFICACY) * dlambda;
+
+}
+
+// Precomputes the textures that will be sent to the render kernel
+atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
+
+	printf("in precompute");
+
+	return ATMO_NO_ERR;
+
+}
+
 
 // Initialization function that fills the atmosphere parameters 
 atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_ozone_) {
@@ -152,11 +258,8 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	}
 	else {
 			   		 
-
+		return ATMO_NO_ERR;
 	}
-
-
-
 
 	return ATMO_NO_ERR;
 
