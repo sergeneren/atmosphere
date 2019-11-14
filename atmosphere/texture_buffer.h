@@ -14,10 +14,10 @@ struct TextureBuffer {
 	cudaTextureObject_t m_delta_scattering_density_texture;
 	cudaTextureObject_t m_delta_multiple_scattering_texture;
 
-	cudaArray_t m_transmittance_array[2];
-	cudaArray_t m_irradiance_array[2];
-	cudaArray_t m_scattering_array[2];
-	cudaArray_t m_optional_single_mie_scattering_array[2];
+	cudaArray_t m_transmittance_array;
+	cudaArray_t m_irradiance_array;
+	cudaArray_t m_scattering_array;
+	cudaArray_t m_optional_single_mie_scattering_array;
 	
 	TextureBuffer(bool half_precision);
 	~TextureBuffer();

@@ -82,7 +82,7 @@ public:
 
 	atmosphere_error_t init(bool , bool);
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
-	atmosphere_error_t precompute(float azimuth, float elevation, float exposure);
+	atmosphere_error_t precompute(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
 	atmosphere_error_t fill_transmittance_texture();
 	atmosphere_error_t fill_scattering_texture();
 	atmosphere_error_t fill_irradiance_texture();

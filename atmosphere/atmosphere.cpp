@@ -148,7 +148,7 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 
 	if (num_precomputed_wavelengths() <= 3) {
 
-
+		precompute(m_texture_buffer, nullptr, nullptr, false, num_scattering_orders);
 	}
 	else {
 
