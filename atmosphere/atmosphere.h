@@ -73,8 +73,6 @@ private:
 	#define kLambdaMin 360
 	#define kLambdaMax 830
 
-
-
 public:
 	
 	atmosphere();
@@ -83,10 +81,14 @@ public:
 	atmosphere_error_t init(bool , bool);
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
 	atmosphere_error_t precompute(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
-	atmosphere_error_t fill_transmittance_texture();
-	atmosphere_error_t fill_scattering_texture();
-	atmosphere_error_t fill_irradiance_texture();
 
+private:
+
+	double coeff(double lambda, int component);
+	void sky_sun_radiance_to_luminance(float3& sky_spectral_radiance_to_luminance, float3& sun_spectral_radiance_to_luminance);
+	static double cie_color_matching_function_table_value(double wavelength, int column);
+	static double interpolate(const std::vector<double>& wavelengths, const std::vector<double>& wavelength_function, double wavelength);
+	static void compute_spectral_radiance_to_luminance_factors(const std::vector<double>& wavelengths, const std::vector<double>& solar_irradiance, double lambda_power, double& k_r, double& k_g, double& k_b);
 
 public:
 
