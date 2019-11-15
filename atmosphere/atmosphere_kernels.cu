@@ -76,8 +76,7 @@ __device__  float ComputeOpticalLengthToTopAtmosphereBoundary(
 	// float of intervals for the numerical integration.
 	const int SAMPLE_COUNT = 500;
 	// The integration step, i.e. the float of each integration interval.
-	float dx =
-		DistanceToTopAtmosphereBoundary(atmosphere, r, mu) / float(SAMPLE_COUNT);
+	float dx =	DistanceToTopAtmosphereBoundary(atmosphere, r, mu) / float(SAMPLE_COUNT);
 	// Integration loop.
 	float result = 0.0 * m;
 	for (int i = 0; i <= SAMPLE_COUNT; ++i) {
@@ -144,8 +143,7 @@ __device__  void GetRMuFromTransmittanceTextureUv(const AtmosphereParameters atm
 	float x_mu = GetUnitRangeFromTextureCoord(uv.x, TRANSMITTANCE_TEXTURE_WIDTH);
 	float x_r = GetUnitRangeFromTextureCoord(uv.y, TRANSMITTANCE_TEXTURE_HEIGHT);
 	// Distance to top atmosphere boundary for a horizontal ray at ground level.
-	float H = sqrt(atmosphere.top_radius * atmosphere.top_radius -
-		atmosphere.bottom_radius * atmosphere.bottom_radius);
+	float H = sqrt(atmosphere.top_radius * atmosphere.top_radius -	atmosphere.bottom_radius * atmosphere.bottom_radius);
 	// Distance to the horizon, from which we can compute r:
 	float rho = H * x_r;
 	r = sqrt(rho * rho + atmosphere.bottom_radius * atmosphere.bottom_radius);
@@ -164,8 +162,7 @@ __device__  float3 ComputeTransmittanceToTopAtmosphereBoundaryTexture(
 	const float2 TRANSMITTANCE_TEXTURE_SIZE = make_float2(TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
 	float r;
 	float mu;
-	GetRMuFromTransmittanceTextureUv(
-		atmosphere, frag_coord / TRANSMITTANCE_TEXTURE_SIZE, r, mu);
+	GetRMuFromTransmittanceTextureUv(atmosphere, frag_coord / TRANSMITTANCE_TEXTURE_SIZE, r, mu);
 	return ComputeTransmittanceToTopAtmosphereBoundary(atmosphere, r, mu);
 }
 
@@ -995,11 +992,9 @@ __device__  float3 GetSkyRadianceToPoint(
 #endif
 
 	// Hack to avoid rendering artifacts when the sun is below the horizon.
-	single_mie_scattering = single_mie_scattering *
-		smoothstep(float(0.0), float(0.01), mu_s);
+	single_mie_scattering = single_mie_scattering *	smoothstep(float(0.0), float(0.01), mu_s);
 
-	return scattering * RayleighPhaseFunction(nu) + single_mie_scattering *
-		MiePhaseFunction(atmosphere.mie_phase_function_g, nu);
+	return scattering * RayleighPhaseFunction(nu) + single_mie_scattering *	MiePhaseFunction(atmosphere.mie_phase_function_g, nu);
 }
 
 
@@ -1034,8 +1029,8 @@ extern "C" __global__ void calculate_transmittance(const AtmosphereParameters at
 	if (x >= TRANSMITTANCE_TEXTURE_WIDTH || y >= TRANSMITTANCE_TEXTURE_HEIGHT) return;
 	const unsigned int idx = y * TRANSMITTANCE_TEXTURE_WIDTH + x;
 
-
-	printf("in transmittance calculation");
+	float2 frag_coord = make_float2(x, y);
+	atmosphere.transmittance_buffer[idx] = ComputeTransmittanceToTopAtmosphereBoundaryTexture(atmosphere, frag_coord);
 
 }
 

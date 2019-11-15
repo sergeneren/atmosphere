@@ -56,6 +56,7 @@ enum atmosphere_error_t {
 	ATMO_INIT_FUNC_ERR,
 	ATMO_RECOMPUTE_ERR,
 	ATMO_FILL_TEX_ERR,
+	ATMO_LAUNCH_ERR,
 	ATMO_NO_ERR
 
 };
@@ -118,9 +119,9 @@ public:
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
 	atmosphere_error_t precompute(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
 
-
 private:
 	DensityProfile adjust_units(DensityProfile density);
+	void print_texture(float3 *buffer ,const char* filename, const int width, const int height);
 	double coeff(double lambda, int component);
 	void sky_sun_radiance_to_luminance(float3& sky_spectral_radiance_to_luminance, float3& sun_spectral_radiance_to_luminance);
 	static double cie_color_matching_function_table_value(double wavelength, int column);

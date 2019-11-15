@@ -76,6 +76,8 @@ struct ALIGN(16) AtmosphereParameters {
 	float mu_s_min;
 
 	double *luminance_from_radiance;
+	
+	float3 *transmittance_buffer;
 
 };
 

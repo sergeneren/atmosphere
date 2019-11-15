@@ -30,12 +30,15 @@ int main(const int argc, const char* argv[]) {
 
 	// get device id and create context
 	cudaGetDevice(&device);
-	cuCtxCreate_v2(&ctx, 0, device);
+	cuCtxCreate(&ctx, 0, device);
 
 	CUresult error;
 	error = cuModuleLoad(&atmosphere_module, "atmosphere_kernels.ptx");
 	if (error != CUDA_SUCCESS) printf("Error: unable to load cuda module! %d", error);
-	earth.init_functions(atmosphere_module);
+	
+	atmosphere_error_t atmo_error = earth.init_functions(atmosphere_module);
+	if (atmo_error != ATMO_NO_ERR) printf("init error");
+	
 	earth.init(true, true);
 	return 0;
 }

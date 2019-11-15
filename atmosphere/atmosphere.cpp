@@ -39,19 +39,13 @@
 
 #include <vector>
 #include <string>
+#include <fstream>
 
 #include "atmosphere/atmosphere.h"
 #include "atmosphere/constants.h"
 
 #include "helper_math.h"
 
-#define check_success(expr) \
-    do { \
-        if(!(expr)) { \
-            fprintf(stderr, "Error in file %s, line %u: \"%s\".\n", __FILE__, __LINE__, #expr); \
-            exit(EXIT_FAILURE); \
-        } \
-    } while(false)
 
 // Functions that hold the texture calculation kernels from atmosphere_kernels.ptx file
 atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
@@ -183,6 +177,18 @@ DensityProfile atmosphere::adjust_units(DensityProfile density) {
 	return density;
 }
 
+void atmosphere::print_texture(float3 * buffer, const char * filename, const int width, const int height)
+{
+	std::ofstream ofs_transmittance(filename, std::ios::out | std::ios::binary);
+	ofs_transmittance << "P6\n" << width << " " << height << "\n255\n";
+
+	for (int i = 0; i < width* height; ++i) {
+		ofs_transmittance << unsigned char(buffer[i].x * 255) << unsigned char(buffer[i].y * 255) << unsigned char(buffer[i].z * 255);
+	}
+
+	ofs_transmittance.close();
+}
+
 // Precomputes the textures that will be sent to the render kernel
 atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
 
@@ -254,22 +260,37 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	atmosphere_parameters.luminance_from_radiance = luminance_from_radiance;
 
 
-	printf("in precompute");
+	// STARTING PRECOMPUTE
+	CUresult result;
 
 	dim3 block(8, 8, 1);
 	dim3 grid(int(TRANSMITTANCE_TEXTURE_WIDTH / block.x) + 1, int(TRANSMITTANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
+	int size = TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT * sizeof(float3);
+
+	cudaMalloc(&atmosphere_parameters.transmittance_buffer, size);
 
 	void *params[] = {&atmosphere_parameters};
-	CUresult result = cuLaunchKernel(transmittance_function, grid.x, grid.y, 1, block.x, block.y, 1, 0, NULL, params, NULL) ;
-	if (result != CUDA_SUCCESS) printf("error!");
+	result = cuLaunchKernel(transmittance_function, grid.x, grid.y, 1, block.x, block.y, 1, 0, NULL, params, NULL) ;
+	cudaDeviceSynchronize();
+	if (result != CUDA_SUCCESS) return ATMO_LAUNCH_ERR;
+
+#if 0 // Print transmittance values
+
+	float3 *host_transmittance_buffer = new float3[TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT]; 
+
+	cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, size, cudaMemcpyDeviceToHost);
+	
+	
+
+#endif
+
+
+
+
 
 	return ATMO_NO_ERR;
 
 }
-
-
-
-
 
 // Initialization function that fills the atmosphere parameters 
 atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_ozone_) {
