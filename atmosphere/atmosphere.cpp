@@ -47,6 +47,8 @@
 #include "helper_math.h"
 
 
+#define DEBUG_TEXTURES
+
 // Functions that hold the texture calculation kernels from atmosphere_kernels.ptx file
 atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
 
@@ -261,13 +263,13 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 
 
 	// STARTING PRECOMPUTE
-
+	
 	// Precompute transmittance 
 	//***************************************************************************************************************************
 
 	CUresult result;
 
-	dim3 block(32, 32, 1);
+	dim3 block(8, 8, 1);
 	dim3 grid_transmittance(int(TRANSMITTANCE_TEXTURE_WIDTH / block.x) + 1, int(TRANSMITTANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
 	int transmittance_size = TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT * sizeof(float3);
 
@@ -278,17 +280,47 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	cudaDeviceSynchronize();
 	if (result != CUDA_SUCCESS) return ATMO_LAUNCH_ERR;
 
-#ifdef DEBUG_TEXTURES // Print transmittance values
+
 
 	float3 *host_transmittance_buffer = new float3[TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT]; 
 
 	cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, transmittance_size, cudaMemcpyDeviceToHost);
+
+#ifdef DEBUG_TEXTURES // Print transmittance values
 	print_texture(host_transmittance_buffer, "transmittance.ppm", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
 	
 #endif
+
+	// Bind transmittance buffer to transmittance texture 
+
+	float4 *texture = new float4[TRANSMITTANCE_TEXTURE_WIDTH*TRANSMITTANCE_TEXTURE_HEIGHT];
+	for (int i = 0; i < TRANSMITTANCE_TEXTURE_WIDTH*TRANSMITTANCE_TEXTURE_HEIGHT; i++) {
+		texture[i] = make_float4(host_transmittance_buffer[i].x, host_transmittance_buffer[i].y, host_transmittance_buffer[i].z, 1.0f);
+	}
+
+	cudaArray_t transmittance_array;
+
+	const cudaChannelFormatDesc channel_desc_val = cudaCreateChannelDesc<float4>();
+	cudaMallocArray(&transmittance_array, &channel_desc_val, TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
+	cudaMemcpy2DToArray(transmittance_array, 0, 0, texture, TRANSMITTANCE_TEXTURE_WIDTH * sizeof(float4), TRANSMITTANCE_TEXTURE_WIDTH * sizeof(float4), TRANSMITTANCE_TEXTURE_HEIGHT, cudaMemcpyHostToDevice);
+
+	cudaResourceDesc res_desc_val;
+	memset(&res_desc_val, 0, sizeof(res_desc_val));
+	res_desc_val.resType = cudaResourceTypeArray;
+	res_desc_val.res.array.array = transmittance_array;
+
+	cudaTextureDesc tex_desc_val;
+	memset(&tex_desc_val, 0, sizeof(tex_desc_val));
+	tex_desc_val.addressMode[0] = cudaAddressModeWrap;
+	tex_desc_val.addressMode[1] = cudaAddressModeClamp;
+	tex_desc_val.addressMode[2] = cudaAddressModeWrap;
+	tex_desc_val.readMode = cudaReadModeNormalizedFloat;
+
+	cudaCreateTextureObject(&atmosphere_parameters.transmittance_texture, &res_desc_val, &tex_desc_val, NULL) ;
+	cudaDeviceSynchronize();
 	//***************************************************************************************************************************
 
-
+	
 
 	// Compute direct irradiance 
 	//***************************************************************************************************************************
@@ -296,13 +328,16 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	int irradiance_size = IRRADIANCE_TEXTURE_WIDTH * IRRADIANCE_TEXTURE_HEIGHT * sizeof(float3);
 
 	cudaMalloc(&atmosphere_parameters.delta_irradience_buffer, irradiance_size);
-	cudaMalloc(&atmosphere_parameters.irradiance_buffer, irradiance_size);
+	//cudaMalloc(&atmosphere_parameters.irradiance_buffer, irradiance_size);
 
-	void *irradiance_params[] = { &atmosphere_parameters };
+	void *irradiance_params[] = { &atmosphere_parameters, &blend };
 	
 	result = cuLaunchKernel(direct_irradiance_function, grid_irradiance.x, grid_irradiance.y, 1, block.x, block.y, 1, 0, NULL, irradiance_params, NULL);
 	cudaDeviceSynchronize();
-	if (result != CUDA_SUCCESS) return ATMO_LAUNCH_ERR;
+	if (result != CUDA_SUCCESS) {
+		printf("Unable to launch direct irradiance function! \n");
+		return ATMO_LAUNCH_ERR;
+	} 
 
 #ifdef DEBUG_TEXTURES // Print transmittance values
 
@@ -314,8 +349,6 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 #endif
 
 	//***************************************************************************************************************************
-
-
 
 
 	return ATMO_NO_ERR;

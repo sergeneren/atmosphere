@@ -119,8 +119,8 @@ __device__  float GetUnitRangeFromTextureCoord(float u, int texture_size) {
 
 __device__  float2 GetTransmittanceTextureUvFromRMu(const AtmosphereParameters atmosphere,
 	float r, float mu) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu >= -1.0 && mu <= 1.0);
 	// Distance to top atmosphere boundary for a horizontal ray at ground level.
 	float H = sqrt(atmosphere.top_radius * atmosphere.top_radius -
 		atmosphere.bottom_radius * atmosphere.bottom_radius);
@@ -169,15 +169,14 @@ __device__  float3 ComputeTransmittanceToTopAtmosphereBoundaryTexture(
 
 __device__  float3 GetTransmittanceToTopAtmosphereBoundary(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
 	float r, float mu) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	float2 uv = GetTransmittanceTextureUvFromRMu(atmosphere, r, mu);
 
-	const float4 texval = tex2D<float4>(transmittance_texture, uv.x, uv.y);
-
+	const float4 texval = tex2D<float4>(atmosphere.transmittance_texture, uv.x, uv.y);
+	
 	float3 val = make_float3(texval);
-
 	return val;
 }
 
@@ -195,18 +194,16 @@ __device__  float3 GetTransmittance(
 
 	if (ray_r_mu_intersects_ground) {
 		return fminf(
-			GetTransmittanceToTopAtmosphereBoundary(
-				atmosphere, transmittance_texture, r_d, -mu_d) /
-			GetTransmittanceToTopAtmosphereBoundary(
-				atmosphere, transmittance_texture, r, -mu),
+			GetTransmittanceToTopAtmosphereBoundary( atmosphere,  r_d, -mu_d) /
+			GetTransmittanceToTopAtmosphereBoundary( atmosphere,  r, -mu),
 			make_float3(1.0f));
 	}
 	else {
 		return fminf(
 			GetTransmittanceToTopAtmosphereBoundary(
-				atmosphere, transmittance_texture, r, mu) /
+				atmosphere,  r, mu) /
 			GetTransmittanceToTopAtmosphereBoundary(
-				atmosphere, transmittance_texture, r_d, mu_d),
+				atmosphere,  r_d, mu_d),
 			make_float3(1.0));
 	}
 }
@@ -218,7 +215,7 @@ __device__  float3 GetTransmittanceToSun(
 	float sin_theta_h = atmosphere.bottom_radius / r;
 	float cos_theta_h = -sqrt(max(1.0 - sin_theta_h * sin_theta_h, 0.0));
 	return GetTransmittanceToTopAtmosphereBoundary(
-		atmosphere, transmittance_texture, r, mu_s) *
+		atmosphere,  r, mu_s) *
 		smoothstep(-sin_theta_h * atmosphere.sun_angular_radius / rad,
 			sin_theta_h * atmosphere.sun_angular_radius / rad,
 			mu_s - cos_theta_h);
@@ -691,21 +688,17 @@ __device__  float3 ComputeMultipleScatteringTexture(
 
 __device__  float3 ComputeDirectIrradiance(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
 	float r, float mu_s) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
+	printf("r: %f, bottom radius: %f, top radius: %f\n", r, atmosphere.bottom_radius, atmosphere.top_radius);
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu_s >= -1.0 && mu_s <= 1.0);
 
 	float alpha_s = atmosphere.sun_angular_radius / rad;
 	// Approximate average of the cosine factor mu_s over the visible fraction of
 	// the Sun disc.
-	float average_cosine_factor =
-		mu_s < -alpha_s ? 0.0 : (mu_s > alpha_s ? mu_s :
-		(mu_s + alpha_s) * (mu_s + alpha_s) / (4.0 * alpha_s));
+	float average_cosine_factor =	mu_s < -alpha_s ? 0.0 : (mu_s > alpha_s ? mu_s : (mu_s + alpha_s) * (mu_s + alpha_s) / (4.0 * alpha_s));
 
-	return atmosphere.solar_irradiance *
-		GetTransmittanceToTopAtmosphereBoundary(
-			atmosphere, transmittance_texture, r, mu_s) * average_cosine_factor;
+	return atmosphere.solar_irradiance * GetTransmittanceToTopAtmosphereBoundary( atmosphere, r, mu_s) * average_cosine_factor;
 
 }
 
@@ -763,20 +756,21 @@ __device__  void GetRMuSFromIrradianceTextureUv(const AtmosphereParameters atmos
 	assert(uv.y >= 0.0 && uv.y <= 1.0);
 	float x_mu_s = GetUnitRangeFromTextureCoord(uv.x, IRRADIANCE_TEXTURE_WIDTH);
 	float x_r = GetUnitRangeFromTextureCoord(uv.y, IRRADIANCE_TEXTURE_HEIGHT);
-	r = atmosphere.bottom_radius +
-		x_r * (atmosphere.top_radius - atmosphere.bottom_radius);
+
+	r = atmosphere.bottom_radius + x_r * (atmosphere.top_radius - atmosphere.bottom_radius);
 	mu_s = ClampCosine(2.0 * x_mu_s - 1.0);
 }
 
 
 __device__  float3 ComputeDirectIrradianceTexture(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
 	float2 frag_coord) {
+
 	float r;
 	float mu_s;
+	
 	GetRMuSFromIrradianceTextureUv(	atmosphere, frag_coord / make_float2(IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT), r, mu_s);
-	return ComputeDirectIrradiance(atmosphere, transmittance_texture, r, mu_s);
+	return ComputeDirectIrradiance(atmosphere, r, mu_s);
 }
 
 __device__  float3 ComputeIndirectIrradianceTexture(
@@ -787,11 +781,8 @@ __device__  float3 ComputeIndirectIrradianceTexture(
 	float2 frag_coord, int scattering_order) {
 	float r;
 	float mu_s;
-	GetRMuSFromIrradianceTextureUv(
-		atmosphere, frag_coord / make_float2(IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT), r, mu_s);
-	return ComputeIndirectIrradiance(atmosphere,
-		single_rayleigh_scattering_texture, single_mie_scattering_texture,
-		multiple_scattering_texture, r, mu_s, scattering_order);
+	GetRMuSFromIrradianceTextureUv(	atmosphere, frag_coord / make_float2(IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT), r, mu_s);
+	return ComputeIndirectIrradiance(atmosphere, single_rayleigh_scattering_texture, single_mie_scattering_texture,	multiple_scattering_texture, r, mu_s, scattering_order);
 }
 
 
@@ -884,9 +875,7 @@ __device__  float3 GetSkyRadiance(
 	float nu = dot(view_ray, sun_direction);
 	bool ray_r_mu_intersects_ground = RayIntersectsGround(atmosphere, r, mu);
 
-	transmittance = ray_r_mu_intersects_ground ? make_float3(0.0f) :
-		GetTransmittanceToTopAtmosphereBoundary(
-			atmosphere, transmittance_texture, r, mu);
+	transmittance = ray_r_mu_intersects_ground ? make_float3(0.0f) : GetTransmittanceToTopAtmosphereBoundary(atmosphere, r, mu);
 	float3 single_mie_scattering;
 	float3 scattering;
 	if (shadow_length == 0.0 * m) {
@@ -1040,14 +1029,12 @@ extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameter
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 	if (x >= IRRADIANCE_TEXTURE_WIDTH || y >= IRRADIANCE_TEXTURE_HEIGHT) return;
 	const unsigned int idx = y * IRRADIANCE_TEXTURE_WIDTH + x;
-
+	
 	float2 frag_coord = make_float2(x, y);
-
-	atmosphere.irradiance_buffer[idx] = make_float3(.0f);
+	
+	if(!blend) atmosphere.irradiance_buffer[idx] = make_float3(.0f);
 
 	atmosphere.delta_irradience_buffer[idx] = ComputeDirectIrradianceTexture(atmosphere, frag_coord);
-
-
 }
 
 extern "C" __global__ void calculate_indirect_irradiance(const int width, const int height){

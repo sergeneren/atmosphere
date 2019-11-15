@@ -76,7 +76,12 @@ struct ALIGN(16) AtmosphereParameters {
 	float mu_s_min;
 
 	double *luminance_from_radiance;
-	
+
+	// Textures
+	cudaTextureObject_t transmittance_texture;
+
+
+	// Buffers
 	float3 *transmittance_buffer;
 	float3 *delta_irradience_buffer;
 	float3 *irradiance_buffer;
