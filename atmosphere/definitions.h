@@ -52,6 +52,9 @@ struct ALIGN(16) DensityProfile {
 
 struct ALIGN(16) AtmosphereParameters {
 
+	float3 sky_spectral_radiance_to_luminance;
+	float3 sun_spectral_radiance_to_luminance;
+
 	float3 solar_irradiance;
 	float angle;
 	float bottom_radius;

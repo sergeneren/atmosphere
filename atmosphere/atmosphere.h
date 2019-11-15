@@ -44,7 +44,6 @@
 
 #include <cuda.h>
 #include "texture_types.h"
-
 #include <vector>
 
 #include "atmosphere/definitions.h"
@@ -61,6 +60,42 @@ enum atmosphere_error_t {
 
 };
 
+constexpr double kPi = 3.1415926;
+
+
+constexpr double kSolarIrradiance[48] = {
+  1.11776, 1.14259, 1.01249, 1.14716, 1.72765, 1.73054, 1.6887, 1.61253,
+  1.91198, 2.03474, 2.02042, 2.02212, 1.93377, 1.95809, 1.91686, 1.8298,
+  1.8685, 1.8931, 1.85149, 1.8504, 1.8341, 1.8345, 1.8147, 1.78158, 1.7533,
+  1.6965, 1.68194, 1.64654, 1.6048, 1.52143, 1.55622, 1.5113, 1.474, 1.4482,
+  1.41018, 1.36775, 1.34188, 1.31429, 1.28303, 1.26758, 1.2367, 1.2082,
+  1.18737, 1.14683, 1.12362, 1.1058, 1.07124, 1.04992
+};
+
+constexpr double kOzoneCrossSection[48] = {
+1.18e-27, 2.182e-28, 2.818e-28, 6.636e-28, 1.527e-27, 2.763e-27, 5.52e-27,
+8.451e-27, 1.582e-26, 2.316e-26, 3.669e-26, 4.924e-26, 7.752e-26, 9.016e-26,
+1.48e-25, 1.602e-25, 2.139e-25, 2.755e-25, 3.091e-25, 3.5e-25, 4.266e-25,
+4.672e-25, 4.398e-25, 4.701e-25, 5.019e-25, 4.305e-25, 3.74e-25, 3.215e-25,
+2.662e-25, 2.238e-25, 1.852e-25, 1.473e-25, 1.209e-25, 9.423e-26, 7.455e-26,
+6.566e-26, 5.105e-26, 4.15e-26, 4.228e-26, 3.237e-26, 2.451e-26, 2.801e-26,
+2.534e-26, 1.624e-26, 1.465e-26, 2.078e-26, 1.383e-26, 7.105e-27
+};
+
+constexpr double kDobsonUnit = 2.687e20;
+constexpr double kMaxOzoneNumberDensity = 300.0 * kDobsonUnit / 15000.0;
+constexpr double kConstantSolarIrradiance = 1.5;
+constexpr double kRayleigh = 1.24062e-6;
+constexpr double kRayleighScaleHeight = 8000.0f;
+constexpr double kMieScaleHeight = 1200.0f;
+constexpr double kMieAngstromAlpha = 0.0;
+constexpr double kMieAngstromBeta = 5.328e-3;
+constexpr double kMieSingleScatteringAlbedo = 0.9;
+constexpr double kGroundAlbedo = 0.1;
+
+static double kDefaultLuminanceFromRadiance[] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
+static double kDefaultLambdas[] = { 680.0, 550.0, 440.0 };
+
 class atmosphere {
 
 
@@ -72,6 +107,7 @@ private:
 
 	#define kLambdaMin 360
 	#define kLambdaMax 830
+	
 
 public:
 	
@@ -82,8 +118,9 @@ public:
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
 	atmosphere_error_t precompute(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
 
-private:
 
+private:
+	DensityProfile adjust_units(DensityProfile density);
 	double coeff(double lambda, int component);
 	void sky_sun_radiance_to_luminance(float3& sky_spectral_radiance_to_luminance, float3& sun_spectral_radiance_to_luminance);
 	static double cie_color_matching_function_table_value(double wavelength, int column);
@@ -91,7 +128,6 @@ private:
 	static void compute_spectral_radiance_to_luminance_factors(const std::vector<double>& wavelengths, const std::vector<double>& solar_irradiance, double lambda_power, double& k_r, double& k_g, double& k_b);
 
 public:
-
 	std::vector<double> m_wave_lengths;
 	std::vector<double> m_solar_irradiance;
 	
@@ -112,6 +148,9 @@ public:
 	
 	std::vector<double> m_ground_albedo;
 
+	double sun_k_r, sun_k_g, sun_k_b;
+	double sky_k_r, sky_k_g, sky_k_b;
+
 	double m_max_sun_zenith_angle;
 	double m_length_unit_in_meters;
 	LUMINANCE m_use_luminance;
@@ -120,8 +159,8 @@ public:
 	bool m_half_precision = false;
 
 	TextureBuffer *m_texture_buffer;
-	AtmosphereTextures atmosphere_textures;
-	AtmosphereParameters atmosphere_parameters;
+	AtmosphereTextures *atmosphere_textures;
+	AtmosphereParameters *atmosphere_parameters;
 
 	CUfunction *transmittance_function;
 	CUfunction *direct_irradiance_function;
