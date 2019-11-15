@@ -75,6 +75,8 @@ struct ALIGN(16) AtmosphereParameters {
 	float sun_angular_radius;
 	float mu_s_min;
 
+	double *luminance_from_radiance;
+
 };
 
 

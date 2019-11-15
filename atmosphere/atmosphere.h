@@ -160,14 +160,14 @@ public:
 
 	TextureBuffer *m_texture_buffer;
 	AtmosphereTextures *atmosphere_textures;
-	AtmosphereParameters *atmosphere_parameters;
+	AtmosphereParameters atmosphere_parameters;
 
-	CUfunction *transmittance_function;
-	CUfunction *direct_irradiance_function;
-	CUfunction *indirect_irradiance_function;
-	CUfunction *multiple_scattering_function;
-	CUfunction *scattering_density_function;
-	CUfunction *single_scattering_function;
+	CUfunction transmittance_function;
+	CUfunction direct_irradiance_function;
+	CUfunction indirect_irradiance_function;
+	CUfunction multiple_scattering_function;
+	CUfunction scattering_density_function;
+	CUfunction single_scattering_function;
 
 	float3 *transmittance_buffer;
 	float4 *scattering_buffer;

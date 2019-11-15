@@ -45,27 +45,34 @@
 
 #include "helper_math.h"
 
+#define check_success(expr) \
+    do { \
+        if(!(expr)) { \
+            fprintf(stderr, "Error in file %s, line %u: \"%s\".\n", __FILE__, __LINE__, #expr); \
+            exit(EXIT_FAILURE); \
+        } \
+    } while(false)
 
 // Functions that hold the texture calculation kernels from atmosphere_kernels.ptx file
 atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
 
 	CUresult error;
-	error = cuModuleGetFunction(transmittance_function, cuda_module, "calculate_transmittance");
+	error = cuModuleGetFunction(&transmittance_function, cuda_module, "calculate_transmittance");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
-	error = cuModuleGetFunction(direct_irradiance_function, cuda_module, "calculate_direct_irradiance");
+	error = cuModuleGetFunction(&direct_irradiance_function, cuda_module, "calculate_direct_irradiance");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
-	error = cuModuleGetFunction(indirect_irradiance_function, cuda_module, "calculate_indirect_irradiance");
+	error = cuModuleGetFunction(&indirect_irradiance_function, cuda_module, "calculate_indirect_irradiance");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
-	error = cuModuleGetFunction(multiple_scattering_function, cuda_module, "calculate_multiple_scattering");
+	error = cuModuleGetFunction(&multiple_scattering_function, cuda_module, "calculate_multiple_scattering");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
-	error = cuModuleGetFunction(scattering_density_function, cuda_module, "calculate__scattering_density");
+	error = cuModuleGetFunction(&scattering_density_function, cuda_module, "calculate__scattering_density");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
-	error = cuModuleGetFunction(single_scattering_function, cuda_module, "calculate_single_scattering");
+	error = cuModuleGetFunction(&single_scattering_function, cuda_module, "calculate_single_scattering");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
 	
@@ -195,65 +202,66 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 
 	compute_spectral_radiance_to_luminance_factors(m_wave_lengths, m_solar_irradiance, 0, sun_k_r, sun_k_g, sun_k_b);
 
-	atmosphere_parameters->sky_spectral_radiance_to_luminance = make_float3(sky_k_r, sky_k_g, sky_k_b);
-	atmosphere_parameters->sun_spectral_radiance_to_luminance = make_float3(sun_k_r, sun_k_g, sun_k_b);
+	atmosphere_parameters.sky_spectral_radiance_to_luminance = make_float3(sky_k_r, sky_k_g, sky_k_b);
+	atmosphere_parameters.sun_spectral_radiance_to_luminance = make_float3(sun_k_r, sun_k_g, sun_k_b);
 
-	atmosphere_parameters->solar_irradiance.x = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.x);
-	atmosphere_parameters->solar_irradiance.y = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.y);
-	atmosphere_parameters->solar_irradiance.z = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.z);
+	atmosphere_parameters.solar_irradiance.x = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.x);
+	atmosphere_parameters.solar_irradiance.y = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.y);
+	atmosphere_parameters.solar_irradiance.z = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.z);
 
 
-	atmosphere_parameters->sun_angular_radius = m_sun_angular_radius;
-	atmosphere_parameters->bottom_radius = m_bottom_radius / m_length_unit_in_meters;
-	atmosphere_parameters->top_radius = m_top_radius / m_length_unit_in_meters;
+	atmosphere_parameters.sun_angular_radius = m_sun_angular_radius;
+	atmosphere_parameters.bottom_radius = m_bottom_radius / m_length_unit_in_meters;
+	atmosphere_parameters.top_radius = m_top_radius / m_length_unit_in_meters;
 
 	DensityProfile rayleigh_density;
 	rayleigh_density.layers[0] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
 	rayleigh_density.layers[1] = { 0.0, 1.0, -1.0 / kRayleighScaleHeight, 0.0, 0.0 };
-	atmosphere_parameters->rayleigh_density = adjust_units(rayleigh_density);
-	atmosphere_parameters->rayleigh_scattering.x = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.x) * m_length_unit_in_meters;
-	atmosphere_parameters->rayleigh_scattering.y = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.y) * m_length_unit_in_meters;
-	atmosphere_parameters->rayleigh_scattering.z = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.z) * m_length_unit_in_meters;
+	atmosphere_parameters.rayleigh_density = adjust_units(rayleigh_density);
+	atmosphere_parameters.rayleigh_scattering.x = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.rayleigh_scattering.y = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.rayleigh_scattering.z = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.z) * m_length_unit_in_meters;
 
 	DensityProfile mie_density;
 	mie_density.layers[0] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
 	mie_density.layers[1] = { 0.0, 1.0, -1.0 / kMieScaleHeight, 0.0, 0.0 };
-	atmosphere_parameters->mie_density = adjust_units(mie_density);
-	atmosphere_parameters->mie_scattering.x = interpolate(m_wave_lengths, m_mie_scattering, lambdas.x) * m_length_unit_in_meters;
-	atmosphere_parameters->mie_scattering.y = interpolate(m_wave_lengths, m_mie_scattering, lambdas.y) * m_length_unit_in_meters;
-	atmosphere_parameters->mie_scattering.z = interpolate(m_wave_lengths, m_mie_scattering, lambdas.z) * m_length_unit_in_meters;
-	atmosphere_parameters->mie_extinction.x = interpolate(m_wave_lengths, m_mie_scattering, lambdas.x) * m_length_unit_in_meters;
-	atmosphere_parameters->mie_extinction.y = interpolate(m_wave_lengths, m_mie_scattering, lambdas.y) * m_length_unit_in_meters;
-	atmosphere_parameters->mie_extinction.z = interpolate(m_wave_lengths, m_mie_scattering, lambdas.z) * m_length_unit_in_meters;
-	atmosphere_parameters->mie_phase_function_g = m_mie_phase_function_g;
+	atmosphere_parameters.mie_density = adjust_units(mie_density);
+	atmosphere_parameters.mie_scattering.x = interpolate(m_wave_lengths, m_mie_scattering, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_scattering.y = interpolate(m_wave_lengths, m_mie_scattering, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_scattering.z = interpolate(m_wave_lengths, m_mie_scattering, lambdas.z) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_extinction.x = interpolate(m_wave_lengths, m_mie_scattering, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_extinction.y = interpolate(m_wave_lengths, m_mie_scattering, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_extinction.z = interpolate(m_wave_lengths, m_mie_scattering, lambdas.z) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_phase_function_g = m_mie_phase_function_g;
 
 
 	DensityProfile ozone_density;
 	ozone_density.layers[0] = { 25000.0, 0.0, 0.0, 1.0 / 15000.0, -2.0 / 3.0 };
 	ozone_density.layers[1] = { 0.0, 0.0, 0.0, -1.0 / 15000.0, 8.0 / 3.0 };
-	atmosphere_parameters->absorption_density = adjust_units(ozone_density);
+	atmosphere_parameters.absorption_density = adjust_units(ozone_density);
 
-	atmosphere_parameters->absorption_extinction.x = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.x) * m_length_unit_in_meters;
-	atmosphere_parameters->absorption_extinction.y = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.y) * m_length_unit_in_meters;
-	atmosphere_parameters->absorption_extinction.z = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.z) * m_length_unit_in_meters;
+	atmosphere_parameters.absorption_extinction.x = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.absorption_extinction.y = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.absorption_extinction.z = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.z) * m_length_unit_in_meters;
 
-	atmosphere_parameters->ground_albedo.x = interpolate(m_wave_lengths, m_ground_albedo, lambdas.x);
-	atmosphere_parameters->ground_albedo.y = interpolate(m_wave_lengths, m_ground_albedo, lambdas.y);
-	atmosphere_parameters->ground_albedo.z = interpolate(m_wave_lengths, m_ground_albedo, lambdas.z);
+	atmosphere_parameters.ground_albedo.x = interpolate(m_wave_lengths, m_ground_albedo, lambdas.x);
+	atmosphere_parameters.ground_albedo.y = interpolate(m_wave_lengths, m_ground_albedo, lambdas.y);
+	atmosphere_parameters.ground_albedo.z = interpolate(m_wave_lengths, m_ground_albedo, lambdas.z);
 
 	const double max_sun_zenith_angle = (m_half_precision ? 102.0 : 120.0) / 180.0 * kPi;
-	atmosphere_parameters->mu_s_min = cos(max_sun_zenith_angle);
+	atmosphere_parameters.mu_s_min = cos(max_sun_zenith_angle);
 	   	  
+	atmosphere_parameters.luminance_from_radiance = luminance_from_radiance;
+
 
 	printf("in precompute");
 
+	dim3 block(8, 8, 1);
+	dim3 grid(int(TRANSMITTANCE_TEXTURE_WIDTH / block.x) + 1, int(TRANSMITTANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
 
-
-
-
-
-
-
+	void *params[] = {&atmosphere_parameters};
+	CUresult result = cuLaunchKernel(transmittance_function, grid.x, grid.y, 1, block.x, block.y, 1, 0, NULL, params, NULL) ;
+	if (result != CUDA_SUCCESS) printf("error!");
 
 	return ATMO_NO_ERR;
 
@@ -347,7 +355,6 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 
 atmosphere::~atmosphere() {
 
-	transmittance_function = nullptr;
 	direct_irradiance_function = nullptr;
 	indirect_irradiance_function = nullptr;
 	multiple_scattering_function = nullptr;
@@ -360,14 +367,6 @@ atmosphere::~atmosphere() {
 
 atmosphere::atmosphere() {
 
-	atmosphere_parameters = new AtmosphereParameters;
 	atmosphere_textures = new AtmosphereTextures;
 
-
-	transmittance_function = new CUfunction;
-	direct_irradiance_function = new CUfunction;
-	indirect_irradiance_function = new CUfunction;
-	multiple_scattering_function = new CUfunction;
-	scattering_density_function = new CUfunction;
-	single_scattering_function = new CUfunction;
 }

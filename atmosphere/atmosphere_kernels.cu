@@ -4,6 +4,8 @@
 #include <cuda_runtime.h> 
 #include <curand_kernel.h>
 
+#include <stdio.h>
+
 #include "helper_math.h"
 #include "atmosphere/constants.h"
 #include "atmosphere/definitions.h"
@@ -1025,12 +1027,15 @@ __device__  float3 GetSunAndSkyIrradiance(
 
 
 
-extern "C" __global__ void calculate_transmittance(const int width, const int height) {
+extern "C" __global__ void calculate_transmittance(const AtmosphereParameters atmosphere) {
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
-	if (x >= width || y >= height) return;
-	const unsigned int idx = y * width + x;
+	if (x >= TRANSMITTANCE_TEXTURE_WIDTH || y >= TRANSMITTANCE_TEXTURE_HEIGHT) return;
+	const unsigned int idx = y * TRANSMITTANCE_TEXTURE_WIDTH + x;
+
+
+	printf("in transmittance calculation");
 
 }
 
