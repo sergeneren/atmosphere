@@ -261,29 +261,59 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 
 
 	// STARTING PRECOMPUTE
+
+	// Precompute transmittance 
+	//***************************************************************************************************************************
+
 	CUresult result;
 
-	dim3 block(8, 8, 1);
-	dim3 grid(int(TRANSMITTANCE_TEXTURE_WIDTH / block.x) + 1, int(TRANSMITTANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
-	int size = TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT * sizeof(float3);
+	dim3 block(32, 32, 1);
+	dim3 grid_transmittance(int(TRANSMITTANCE_TEXTURE_WIDTH / block.x) + 1, int(TRANSMITTANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
+	int transmittance_size = TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT * sizeof(float3);
 
-	cudaMalloc(&atmosphere_parameters.transmittance_buffer, size);
+	cudaMalloc(&atmosphere_parameters.transmittance_buffer, transmittance_size);
 
-	void *params[] = {&atmosphere_parameters};
-	result = cuLaunchKernel(transmittance_function, grid.x, grid.y, 1, block.x, block.y, 1, 0, NULL, params, NULL) ;
+	void *transmittance_params[] = {&atmosphere_parameters};
+	result = cuLaunchKernel(transmittance_function, grid_transmittance.x, grid_transmittance.y, 1, block.x, block.y, 1, 0, NULL, transmittance_params, NULL) ;
 	cudaDeviceSynchronize();
 	if (result != CUDA_SUCCESS) return ATMO_LAUNCH_ERR;
 
-#if 0 // Print transmittance values
+#ifdef DEBUG_TEXTURES // Print transmittance values
 
 	float3 *host_transmittance_buffer = new float3[TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT]; 
 
-	cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, size, cudaMemcpyDeviceToHost);
+	cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, transmittance_size, cudaMemcpyDeviceToHost);
+	print_texture(host_transmittance_buffer, "transmittance.ppm", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
 	
+#endif
+	//***************************************************************************************************************************
+
+
+
+	// Compute direct irradiance 
+	//***************************************************************************************************************************
+	dim3 grid_irradiance(int(IRRADIANCE_TEXTURE_WIDTH / block.x) + 1, int(IRRADIANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
+	int irradiance_size = IRRADIANCE_TEXTURE_WIDTH * IRRADIANCE_TEXTURE_HEIGHT * sizeof(float3);
+
+	cudaMalloc(&atmosphere_parameters.delta_irradience_buffer, irradiance_size);
+	cudaMalloc(&atmosphere_parameters.irradiance_buffer, irradiance_size);
+
+	void *irradiance_params[] = { &atmosphere_parameters };
 	
+	result = cuLaunchKernel(direct_irradiance_function, grid_irradiance.x, grid_irradiance.y, 1, block.x, block.y, 1, 0, NULL, irradiance_params, NULL);
+	cudaDeviceSynchronize();
+	if (result != CUDA_SUCCESS) return ATMO_LAUNCH_ERR;
+
+#ifdef DEBUG_TEXTURES // Print transmittance values
+
+	float3 *host_irradiance_buffer = new float3[IRRADIANCE_TEXTURE_WIDTH * IRRADIANCE_TEXTURE_HEIGHT];
+
+	cudaMemcpy(host_irradiance_buffer, atmosphere_parameters.delta_irradience_buffer, irradiance_size, cudaMemcpyDeviceToHost);
+	print_texture(host_irradiance_buffer, "irradiance.ppm", IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
 
 #endif
 
+	//***************************************************************************************************************************
 
 
 
