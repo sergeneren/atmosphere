@@ -19,7 +19,7 @@ __device__  float ClampCosine(float mu) {
 }
 
 __device__  float ClampDistance(float d) {
-	return max(d, 0.0 * m);
+	return fmaxf(d, 0.0 * m);
 }
 
 __device__  float ClampRadius(const AtmosphereParameters atmosphere, float r) {
@@ -27,15 +27,14 @@ __device__  float ClampRadius(const AtmosphereParameters atmosphere, float r) {
 }
 
 __device__  float SafeSqrt(float a) {
-	return sqrt(max(a, 0.0 * m2()));
+	return sqrtf(fmaxf(a, 0.0 * m2()));
 }
 
 __device__  float DistanceToTopAtmosphereBoundary(const AtmosphereParameters atmosphere,
 	float r, float mu) {
 	assert(r <= atmosphere.top_radius);
 	assert(mu >= -1.0 && mu <= 1.0);
-	float discriminant = r * r * (mu * mu - 1.0) +
-		atmosphere.top_radius * atmosphere.top_radius;
+	float discriminant = r * r * (mu * mu - 1.0) + atmosphere.top_radius * atmosphere.top_radius;
 	return ClampDistance(-r * mu + SafeSqrt(discriminant));
 }
 
@@ -43,8 +42,7 @@ __device__  float DistanceToBottomAtmosphereBoundary(const AtmosphereParameters 
 	float r, float mu) {
 	assert(r >= atmosphere.bottom_radius);
 	assert(mu >= -1.0 && mu <= 1.0);
-	float discriminant = r * r * (mu * mu - 1.0) +
-		atmosphere.bottom_radius * atmosphere.bottom_radius;
+	float discriminant = r * r * (mu * mu - 1.0) + atmosphere.bottom_radius * atmosphere.bottom_radius;
 	return ClampDistance(-r * mu - SafeSqrt(discriminant));
 }
 
@@ -119,14 +117,12 @@ __device__  float GetUnitRangeFromTextureCoord(float u, int texture_size) {
 
 __device__  float2 GetTransmittanceTextureUvFromRMu(const AtmosphereParameters atmosphere,
 	float r, float mu) {
-	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	//assert(mu >= -1.0 && mu <= 1.0);
+	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	assert(mu >= -1.0 && mu <= 1.0);
 	// Distance to top atmosphere boundary for a horizontal ray at ground level.
-	float H = sqrt(atmosphere.top_radius * atmosphere.top_radius -
-		atmosphere.bottom_radius * atmosphere.bottom_radius);
+	float H = sqrtf(atmosphere.top_radius * atmosphere.top_radius -	atmosphere.bottom_radius * atmosphere.bottom_radius);
 	// Distance to the horizon.
-	float rho =
-		SafeSqrt(r * r - atmosphere.bottom_radius * atmosphere.bottom_radius);
+	float rho =	SafeSqrt(r * r - atmosphere.bottom_radius * atmosphere.bottom_radius);
 	// Distance to the top atmosphere boundary for the ray (r,mu), and its minimum
 	// and maximum values over all mu - obtained for (r,1) and (r,mu_horizon).
 	float d = DistanceToTopAtmosphereBoundary(atmosphere, r, mu);
@@ -134,6 +130,7 @@ __device__  float2 GetTransmittanceTextureUvFromRMu(const AtmosphereParameters a
 	float d_max = rho + H;
 	float x_mu = (d - d_min) / (d_max - d_min);
 	float x_r = rho / H;
+	printf("d: %f\n", d);
 	return make_float2(GetTextureCoordFromUnitRange(x_mu, TRANSMITTANCE_TEXTURE_WIDTH), GetTextureCoordFromUnitRange(x_r, TRANSMITTANCE_TEXTURE_HEIGHT));
 }
 
@@ -171,20 +168,27 @@ __device__  float3 GetTransmittanceToTopAtmosphereBoundary(
 	const AtmosphereParameters atmosphere,
 	float r, float mu) {
 
-	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	float2 uv = GetTransmittanceTextureUvFromRMu(atmosphere, r, mu);
-
-	const float4 texval = tex2D<float4>(atmosphere.transmittance_texture, uv.x, uv.y);
+	int x = int(uv.x * TRANSMITTANCE_TEXTURE_WIDTH);
+	int y = int(uv.y * TRANSMITTANCE_TEXTURE_HEIGHT);
+	int idx = (y * TRANSMITTANCE_TEXTURE_WIDTH-1) + x;
+	idx = clamp(idx, 0, TRANSMITTANCE_TEXTURE_WIDTH*TRANSMITTANCE_TEXTURE_HEIGHT);
+	const float3 texval = atmosphere.transmittance_buffer[idx];
 	
-	float3 val = make_float3(texval);
-	return val;
+	//const float4 texval = tex2D<float4>(atmosphere.transmittance_texture, uv.x/16.0f * TRANSMITTANCE_TEXTURE_WIDTH, uv.y * TRANSMITTANCE_TEXTURE_HEIGHT);
+	
+	//float3 val = make_float3(texval);
+	return texval;
 }
 
 
 __device__  float3 GetTransmittance(
 	const AtmosphereParameters atmosphere,
 	const cudaTextureObject_t transmittance_texture,
-	float r, float mu, float d, bool ray_r_mu_intersects_ground) {
+	float r, float mu, float d, bool ray_r_mu_intersects_ground) 
+{
+
 	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	assert(mu >= -1.0 && mu <= 1.0);
 	assert(d >= 0.0 * m);
@@ -689,9 +693,8 @@ __device__  float3 ComputeMultipleScatteringTexture(
 __device__  float3 ComputeDirectIrradiance(
 	const AtmosphereParameters atmosphere,
 	float r, float mu_s) {
-	printf("r: %f, bottom radius: %f, top radius: %f\n", r, atmosphere.bottom_radius, atmosphere.top_radius);
-	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	//assert(mu_s >= -1.0 && mu_s <= 1.0);
+	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	assert(mu_s >= -1.0 && mu_s <= 1.0);
 
 	float alpha_s = atmosphere.sun_angular_radius / rad;
 	// Approximate average of the cosine factor mu_s over the visible fraction of
@@ -756,8 +759,9 @@ __device__  void GetRMuSFromIrradianceTextureUv(const AtmosphereParameters atmos
 	assert(uv.y >= 0.0 && uv.y <= 1.0);
 	float x_mu_s = GetUnitRangeFromTextureCoord(uv.x, IRRADIANCE_TEXTURE_WIDTH);
 	float x_r = GetUnitRangeFromTextureCoord(uv.y, IRRADIANCE_TEXTURE_HEIGHT);
-
+	
 	r = atmosphere.bottom_radius + x_r * (atmosphere.top_radius - atmosphere.bottom_radius);
+	r = ClampRadius(atmosphere, r);
 	mu_s = ClampCosine(2.0 * x_mu_s - 1.0);
 }
 
@@ -765,7 +769,7 @@ __device__  void GetRMuSFromIrradianceTextureUv(const AtmosphereParameters atmos
 __device__  float3 ComputeDirectIrradianceTexture(
 	const AtmosphereParameters atmosphere,
 	float2 frag_coord) {
-
+	
 	float r;
 	float mu_s;
 	
@@ -1023,7 +1027,7 @@ extern "C" __global__ void calculate_transmittance(const AtmosphereParameters at
 
 }
 
-extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameters atmosphere, const bool blend){
+extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameters atmosphere, const int blend){
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1033,7 +1037,6 @@ extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameter
 	float2 frag_coord = make_float2(x, y);
 	
 	if(!blend) atmosphere.irradiance_buffer[idx] = make_float3(.0f);
-
 	atmosphere.delta_irradience_buffer[idx] = ComputeDirectIrradianceTexture(atmosphere, frag_coord);
 }
 

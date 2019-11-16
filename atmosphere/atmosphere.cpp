@@ -36,23 +36,23 @@
 //
 //-----------------------------------------------
 
+#define DEBUG_TEXTURES
 
 #include <vector>
 #include <string>
 #include <fstream>
 
-
-// Image Writers 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
+#ifdef DEBUG_TEXTURES
+	// Image Writers 
+	#define STB_IMAGE_WRITE_IMPLEMENTATION
+	#include "stb_image_write.h"
+#endif // DEBUG_TEXTURES
 
 #include "atmosphere/atmosphere.h"
 #include "atmosphere/constants.h"
 
 #include "helper_math.h"
 
-
-#define DEBUG_TEXTURES
 
 // Functions that hold the texture calculation kernels from atmosphere_kernels.ptx file
 atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
@@ -186,6 +186,7 @@ DensityProfile atmosphere::adjust_units(DensityProfile density) {
 
 void atmosphere::print_texture(float3 * buffer, const char * filename, const int width, const int height)
 {
+#ifdef DEBUG_TEXTURES
 
 	unsigned char *data = new unsigned char[width*height * 3];
 
@@ -200,12 +201,13 @@ void atmosphere::print_texture(float3 * buffer, const char * filename, const int
 
 		}
 	}
-
+	stbi_flip_vertically_on_write(1);
 	stbi_write_jpg(filename, width, height, 3, (void*)data, 100);
-	
+#endif
 }
 void atmosphere::print_texture(float4 * buffer, const char * filename, const int width, const int height)
 {
+#ifdef DEBUG_TEXTURES
 	unsigned char *data = new unsigned char[width*height * 4];
 
 	int idx = 0;
@@ -220,8 +222,9 @@ void atmosphere::print_texture(float4 * buffer, const char * filename, const int
 
 		}
 	}
-
+	stbi_flip_vertically_on_write(1);
 	stbi_write_png(filename, width, height, 4, (void*)data,0);
+#endif
 }
 
 // Precomputes the textures that will be sent to the render kernel
@@ -354,16 +357,16 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	//***************************************************************************************************************************
 
 	
-
+	
 	// Compute direct irradiance 
 	//***************************************************************************************************************************
 	dim3 grid_irradiance(int(IRRADIANCE_TEXTURE_WIDTH / block.x) + 1, int(IRRADIANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
 	int irradiance_size = IRRADIANCE_TEXTURE_WIDTH * IRRADIANCE_TEXTURE_HEIGHT * sizeof(float3);
 
 	cudaMalloc(&atmosphere_parameters.delta_irradience_buffer, irradiance_size);
-	//cudaMalloc(&atmosphere_parameters.irradiance_buffer, irradiance_size);
+	cudaMalloc(&atmosphere_parameters.irradiance_buffer, irradiance_size);
 
-	void *irradiance_params[] = { &atmosphere_parameters, &blend };
+	void *irradiance_params[] = { &atmosphere_parameters, (void*)&blend };
 	
 	result = cuLaunchKernel(direct_irradiance_function, grid_irradiance.x, grid_irradiance.y, 1, block.x, block.y, 1, 0, NULL, irradiance_params, NULL);
 	cudaDeviceSynchronize();
@@ -382,7 +385,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 #endif
 
 	//***************************************************************************************************************************
-
+	
 
 	return ATMO_NO_ERR;
 
@@ -472,18 +475,12 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 
 atmosphere::~atmosphere() {
 
-	direct_irradiance_function = nullptr;
-	indirect_irradiance_function = nullptr;
-	multiple_scattering_function = nullptr;
-	scattering_density_function = nullptr;
-	single_scattering_function = nullptr;
-
 	delete m_texture_buffer;
 
 }
 
 atmosphere::atmosphere() {
-
+	m_use_luminance = NONE;
 	atmosphere_textures = new AtmosphereTextures;
 
 }
