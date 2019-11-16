@@ -190,6 +190,17 @@ void atmosphere::print_texture(float3 * buffer, const char * filename, const int
 
 	ofs_transmittance.close();
 }
+void atmosphere::print_texture(float4 * buffer, const char * filename, const int width, const int height)
+{
+	std::ofstream ofs_transmittance(filename, std::ios::out | std::ios::binary);
+	ofs_transmittance << "P6\n" << width << " " << height << "\n255\n";
+
+	for (int i = 0; i < width* height; ++i) {
+		ofs_transmittance << unsigned char(buffer[i].x * 255) << unsigned char(buffer[i].y * 255) << unsigned char(buffer[i].z * 255);
+	}
+
+	ofs_transmittance.close();
+}
 
 // Precomputes the textures that will be sent to the render kernel
 atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
