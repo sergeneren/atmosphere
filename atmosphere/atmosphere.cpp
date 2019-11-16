@@ -41,6 +41,11 @@
 #include <string>
 #include <fstream>
 
+
+// Image Writers 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include "atmosphere/atmosphere.h"
 #include "atmosphere/constants.h"
 
@@ -181,25 +186,42 @@ DensityProfile atmosphere::adjust_units(DensityProfile density) {
 
 void atmosphere::print_texture(float3 * buffer, const char * filename, const int width, const int height)
 {
-	std::ofstream ofs_transmittance(filename, std::ios::out | std::ios::binary);
-	ofs_transmittance << "P6\n" << width << " " << height << "\n255\n";
 
-	for (int i = 0; i < width* height; ++i) {
-		ofs_transmittance << unsigned char(buffer[i].x * 255) << unsigned char(buffer[i].y * 255) << unsigned char(buffer[i].z * 255);
+	unsigned char *data = new unsigned char[width*height * 3];
+
+	int idx = 0; 
+	for (int i = 0; i < width; ++i) {
+		for (int y = 0; y < height; ++y) {
+		
+			int index = i * height + y; 
+			data[idx++] = unsigned char(buffer[index].x * 255);
+			data[idx++] = unsigned char(buffer[index].y * 255);
+			data[idx++] = unsigned char(buffer[index].z * 255);
+
+		}
 	}
 
-	ofs_transmittance.close();
+	stbi_write_jpg(filename, width, height, 3, (void*)data, 100);
+	
 }
 void atmosphere::print_texture(float4 * buffer, const char * filename, const int width, const int height)
 {
-	std::ofstream ofs_transmittance(filename, std::ios::out | std::ios::binary);
-	ofs_transmittance << "P6\n" << width << " " << height << "\n255\n";
+	unsigned char *data = new unsigned char[width*height * 4];
 
-	for (int i = 0; i < width* height; ++i) {
-		ofs_transmittance << unsigned char(buffer[i].x * 255) << unsigned char(buffer[i].y * 255) << unsigned char(buffer[i].z * 255);
+	int idx = 0;
+	for (int i = 0; i < width; ++i) {
+		for (int y = 0; y < height; ++y) {
+
+			int index = i * height + y;
+			data[idx++] = unsigned char(buffer[index].x * 255);
+			data[idx++] = unsigned char(buffer[index].y * 255);
+			data[idx++] = unsigned char(buffer[index].z * 255);
+			data[idx++] = unsigned char(buffer[index].w * 255);
+
+		}
 	}
 
-	ofs_transmittance.close();
+	stbi_write_png(filename, width, height, 4, (void*)data,0);
 }
 
 // Precomputes the textures that will be sent to the render kernel
@@ -298,7 +320,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, transmittance_size, cudaMemcpyDeviceToHost);
 
 #ifdef DEBUG_TEXTURES // Print transmittance values
-	print_texture(host_transmittance_buffer, "transmittance.ppm", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
+	print_texture(host_transmittance_buffer, "transmittance.jpg", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
 	
 #endif
 
@@ -325,7 +347,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	tex_desc_val.addressMode[0] = cudaAddressModeWrap;
 	tex_desc_val.addressMode[1] = cudaAddressModeClamp;
 	tex_desc_val.addressMode[2] = cudaAddressModeWrap;
-	tex_desc_val.readMode = cudaReadModeNormalizedFloat;
+	tex_desc_val.readMode = cudaReadModeElementType;
 
 	cudaCreateTextureObject(&atmosphere_parameters.transmittance_texture, &res_desc_val, &tex_desc_val, NULL) ;
 	cudaDeviceSynchronize();
@@ -355,7 +377,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	float3 *host_irradiance_buffer = new float3[IRRADIANCE_TEXTURE_WIDTH * IRRADIANCE_TEXTURE_HEIGHT];
 
 	cudaMemcpy(host_irradiance_buffer, atmosphere_parameters.delta_irradience_buffer, irradiance_size, cudaMemcpyDeviceToHost);
-	print_texture(host_irradiance_buffer, "irradiance.ppm", IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
+	print_texture(host_irradiance_buffer, "irradiance.jpg", IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
 
 #endif
 
