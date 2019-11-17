@@ -195,9 +195,9 @@ void atmosphere::print_texture(float3 * buffer, const char * filename, const int
 		for (int y = 0; y < height; ++y) {
 		
 			int index = i * height + y; 
-			data[idx++] = unsigned char(buffer[index].x * 255);
-			data[idx++] = unsigned char(buffer[index].y * 255);
-			data[idx++] = unsigned char(buffer[index].z * 255);
+			data[idx++] = min(max(0, unsigned char(buffer[index].x * 255)), 255);
+			data[idx++] = min(max(0, unsigned char(buffer[index].y * 255)), 255);
+			data[idx++] = min(max(0, unsigned char(buffer[index].z * 255)), 255);
 
 		}
 	}
@@ -215,10 +215,10 @@ void atmosphere::print_texture(float4 * buffer, const char * filename, const int
 		for (int y = 0; y < height; ++y) {
 
 			int index = i * height + y;
-			data[idx++] = unsigned char(buffer[index].x * 255);
-			data[idx++] = unsigned char(buffer[index].y * 255);
-			data[idx++] = unsigned char(buffer[index].z * 255);
-			data[idx++] = unsigned char(buffer[index].w * 255);
+			data[idx++] = min(max(0, unsigned char(buffer[index].x * 255)), 255);
+			data[idx++] = min(max(0, unsigned char(buffer[index].y * 255)), 255);
+			data[idx++] = min(max(0, unsigned char(buffer[index].z * 255)), 255);
+			data[idx++] = min(max(0, unsigned char(buffer[index].w * 255)), 255);
 
 		}
 	}
@@ -327,6 +327,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	
 #endif
 
+#if 0
 	// Bind transmittance buffer to transmittance texture 
 
 	float4 *texture = new float4[TRANSMITTANCE_TEXTURE_WIDTH*TRANSMITTANCE_TEXTURE_HEIGHT];
@@ -355,7 +356,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	cudaCreateTextureObject(&atmosphere_parameters.transmittance_texture, &res_desc_val, &tex_desc_val, NULL) ;
 	cudaDeviceSynchronize();
 	//***************************************************************************************************************************
-
+#endif
 	
 	
 	// Compute direct irradiance 
@@ -424,7 +425,7 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	m_mie_density = new DensityProfileLayer(0.0f, 1.0f, -1.0f / float(kMieScaleHeight), 0.0f, 0.0f);
 	m_mie_phase_function_g = 0.8;
 	m_max_sun_zenith_angle = 102.0 / 180.0 * kPi;
-	m_length_unit_in_meters = 1000.0;
+	m_length_unit_in_meters = 1000.0f;
 
 	int num_scattering_orders = 4;
 
