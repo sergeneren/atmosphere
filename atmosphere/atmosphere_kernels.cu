@@ -440,10 +440,8 @@ __device__  float3 GetScattering(
 	float tex_coord_x = uvwz.x * float(SCATTERING_TEXTURE_NU_SIZE - 1);
 	float tex_x = floor(tex_coord_x);
 	float lerp = tex_coord_x - tex_x;
-	float3 uvw0 = make_float3((tex_x + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE),
-		uvwz.z, uvwz.w);
-	float3 uvw1 = make_float3((tex_x + 1.0 + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE),
-		uvwz.z, uvwz.w);
+	float3 uvw0 = make_float3((tex_x + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE),	uvwz.z, uvwz.w);
+	float3 uvw1 = make_float3((tex_x + 1.0 + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
 
 	int3 uvw0_i = make_int3(uvw0.x * SCATTERING_TEXTURE_WIDTH, uvw0.y * SCATTERING_TEXTURE_HEIGHT, uvw0.z * SCATTERING_TEXTURE_DEPTH);
 	int3 uvw1_i = make_int3(uvw1.x * SCATTERING_TEXTURE_WIDTH, uvw1.y * SCATTERING_TEXTURE_HEIGHT, uvw1.z * SCATTERING_TEXTURE_DEPTH);
@@ -472,18 +470,11 @@ __device__  float3 GetScattering(const AtmosphereParameters atmosphere, float r,
 
 __device__  float3 GetIrradiance(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t irradiance_texture,
 	float r, float mu_s);
 
 
 __device__  float3 ComputeScatteringDensity(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
-	const cudaTextureObject_t single_rayleigh_scattering_texture,
-	const cudaTextureObject_t single_mie_scattering_texture,
-	const cudaTextureObject_t multiple_scattering_texture,
-	const cudaTextureObject_t irradiance_texture,
-	float r, float mu, float mu_s, float nu, int scattering_order) 
+	const AtmosphereParameters atmosphere, float r, float mu, float mu_s, float nu, int scattering_order) 
 {
 	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	//assert(mu >= -1.0 && mu <= 1.0);
@@ -542,7 +533,7 @@ __device__  float3 ComputeScatteringDensity(
 			// transmittance to the ground, the ground albedo, the ground BRDF, and
 			// the irradiance received on the ground after n-2 bounces.
 			float3 ground_normal = normalize(zenith_direction * r + omega_i * distance_to_ground);
-			float3 ground_irradiance = GetIrradiance( atmosphere, irradiance_texture, atmosphere.bottom_radius, dot(ground_normal, omega_s));
+			float3 ground_irradiance = GetIrradiance( atmosphere, atmosphere.bottom_radius, dot(ground_normal, omega_s));
 			incident_radiance += transmittance_to_ground * ground_albedo * (1.0 / (PI * sr)) * ground_irradiance;
 
 			// The radiance finally scattered from float3 omega_i towards float3
@@ -610,24 +601,14 @@ __device__  float3 ComputeMultipleScattering(
 
 
 __device__  float3 ComputeScatteringDensityTexture(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
-	const cudaTextureObject_t single_rayleigh_scattering_texture,
-	const cudaTextureObject_t single_mie_scattering_texture,
-	const cudaTextureObject_t multiple_scattering_texture,
-	const cudaTextureObject_t irradiance_texture,
-	float3 frag_coord, int scattering_order) {
+	const AtmosphereParameters atmosphere, float3 frag_coord, int scattering_order) {
 	float r;
 	float mu;
 	float mu_s;
 	float nu;
 	bool ray_r_mu_intersects_ground;
-	GetRMuMuSNuFromScatteringTextureFragCoord(atmosphere, frag_coord,
-		r, mu, mu_s, nu, ray_r_mu_intersects_ground);
-	return ComputeScatteringDensity(atmosphere, transmittance_texture,
-		single_rayleigh_scattering_texture, single_mie_scattering_texture,
-		multiple_scattering_texture, irradiance_texture, r, mu, mu_s, nu,
-		scattering_order);
+	GetRMuMuSNuFromScatteringTextureFragCoord(atmosphere, frag_coord, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+	return ComputeScatteringDensity(atmosphere, r, mu, mu_s, nu, scattering_order);
 }
 
 __device__  float3 ComputeMultipleScatteringTexture(
@@ -732,14 +713,16 @@ __device__  float3 ComputeIndirectIrradianceTexture(
 
 
 __device__  float3 GetIrradiance(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t irradiance_texture,
-	float r, float mu_s) {
+	const AtmosphereParameters atmosphere, float r, float mu_s) {
 	float2 uv = GetIrradianceTextureUvFromRMuS(atmosphere, r, mu_s);
 
-	float4 texval = tex2D<float4>(irradiance_texture, uv.x, uv.y);
+	int x = int(floor(uv.x * IRRADIANCE_TEXTURE_WIDTH));
+	int y = int(floor(uv.y * IRRADIANCE_TEXTURE_HEIGHT));
+	int idx = (y * IRRADIANCE_TEXTURE_WIDTH) + x;
+	idx = clamp(idx, 0, IRRADIANCE_TEXTURE_WIDTH*IRRADIANCE_TEXTURE_HEIGHT);
 
-	return make_float3(texval);
+	const float3 val = atmosphere.irradiance_buffer[idx];
+	return val;
 }
 
 #ifdef COMBINED_SCATTERING_TEXTURES
@@ -937,7 +920,7 @@ __device__  float3 GetSunAndSkyIrradiance(
 	float mu_s = dot(point, sun_direction) / r;
 
 	// Indirect irradiance (approximated if the surface is not horizontal).
-	sky_irradiance = GetIrradiance(atmosphere, irradiance_texture, r, mu_s) * (1.0 + dot(normal, point) / r) * 0.5;
+	sky_irradiance = GetIrradiance(atmosphere, r, mu_s) * (1.0 + dot(normal, point) / r) * 0.5;
 
 	// Direct irradiance.
 	return atmosphere.solar_irradiance * GetTransmittanceToSun(atmosphere,  r, mu_s) * max(dot(normal, sun_direction), 0.0);
@@ -1009,13 +992,21 @@ extern "C" __global__ void calculate_multiple_scattering(const int width, const 
 
 }
 
-extern "C" __global__ void calculate_scattering_density(const int width, const int height){
+extern "C" __global__ void calculate_scattering_density(const AtmosphereParameters atmosphere, const float4 blend, mat4 luminance_from_radiance, const int scattering_order){
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
-	if (x >= width || y >= height) return;
-	const unsigned int idx = y * width + x;
+	int z = blockIdx.z * blockDim.z + threadIdx.z;
 
+	if (x >= SCATTERING_TEXTURE_WIDTH || y >= SCATTERING_TEXTURE_HEIGHT || z >= SCATTERING_TEXTURE_DEPTH) return;
+
+	const unsigned int idx = x + SCATTERING_TEXTURE_WIDTH * (y + SCATTERING_TEXTURE_HEIGHT * z);
+
+	float3 frag_coord = make_float3(x, y, z);
+	frag_coord += make_float3(0.5f, 0.5f, 0.5f);
+
+	float3 scattering_density = ComputeScatteringDensityTexture(atmosphere, frag_coord, scattering_order);
+	atmosphere.delta_scattering_density_buffer[idx] = make_float4(scattering_density, 1.0f);
 }
 
 extern "C" __global__ void calculate_single_scattering(const AtmosphereParameters atmosphere, const float4 blend, mat4 luminance_from_radiance){

@@ -43,7 +43,6 @@
 #include <fstream>
 
 #ifdef DEBUG_TEXTURES
-	// Image Writers 
 	#define STB_IMAGE_WRITE_IMPLEMENTATION
 	#include "stb_image_write.h"
 #endif // DEBUG_TEXTURES
@@ -444,10 +443,29 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 		result = cuLaunchKernel(scattering_density_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
 		cudaDeviceSynchronize();
 		if (result != CUDA_SUCCESS) {
-			printf("Unable to launch direct single scattering function! \n");
+			printf("Unable to launch direct scattering density function! \n");
 			return ATMO_LAUNCH_ERR;
 		}
-	
+
+#ifdef DEBUG_TEXTURES // Print single scattering values
+
+		cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_scattering_density_buffer, scattering_size, cudaMemcpyDeviceToHost);
+		std::string name("scattering_density_");
+		name.append(std::to_string(scattering_order));
+		name.append(".png");
+		
+		print_texture(host_scattering_buffer, name.c_str(), SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
+
+#endif
+
+		// Compute indirect irradiance
+		//***************************************************************************************************************************
+
+		blend_vec = make_float4(.0f, 1.0f, .0f, .0f);
+
+		void *indirect_irradiance_params[] = { &atmosphere_parameters, &blend_vec, &lfrm, &scattering_order };
+
+
 	}
 
 
