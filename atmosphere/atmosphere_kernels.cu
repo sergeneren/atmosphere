@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 #include "helper_math.h"
+#include "matrix_math.h"
 #include "atmosphere/constants.h"
 #include "atmosphere/definitions.h"
 #include <assert.h>
@@ -170,29 +171,20 @@ __device__  float3 GetTransmittanceToTopAtmosphereBoundary(
 
 	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	float2 uv = GetTransmittanceTextureUvFromRMu(atmosphere, r, mu);
-
-
-	
 	int x = int(floor(uv.x * TRANSMITTANCE_TEXTURE_WIDTH));
 	int y = int(floor(uv.y * TRANSMITTANCE_TEXTURE_HEIGHT));
 	int idx = (y * TRANSMITTANCE_TEXTURE_WIDTH) + x;
 	idx = clamp(idx, 0, TRANSMITTANCE_TEXTURE_WIDTH*TRANSMITTANCE_TEXTURE_HEIGHT);
 	
-	const float3 texval = atmosphere.transmittance_buffer[idx];
-	
-	// const float4 texval = tex2D<float4>(atmosphere.transmittance_texture, uv.x * TRANSMITTANCE_TEXTURE_WIDTH, uv.y * TRANSMITTANCE_TEXTURE_HEIGHT);
-	//float3 val = make_float3(texval);
-	
+	const float3 texval = atmosphere.transmittance_buffer[idx];	
 	return texval;
 }
 
 
 __device__  float3 GetTransmittance(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
 	float r, float mu, float d, bool ray_r_mu_intersects_ground) 
 {
-
 	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	assert(mu >= -1.0 && mu <= 1.0);
 	assert(d >= 0.0 * m);
@@ -201,25 +193,15 @@ __device__  float3 GetTransmittance(
 	float mu_d = ClampCosine((r * mu + d) / r_d);
 
 	if (ray_r_mu_intersects_ground) {
-		return fminf(
-			GetTransmittanceToTopAtmosphereBoundary( atmosphere,  r_d, -mu_d) /
-			GetTransmittanceToTopAtmosphereBoundary( atmosphere,  r, -mu),
-			make_float3(1.0f));
+		return fminf(GetTransmittanceToTopAtmosphereBoundary( atmosphere,  r_d, -mu_d) / GetTransmittanceToTopAtmosphereBoundary( atmosphere,  r, -mu),	make_float3(1.0f));
 	}
 	else {
-		return fminf(
-			GetTransmittanceToTopAtmosphereBoundary(
-				atmosphere,  r, mu) /
-			GetTransmittanceToTopAtmosphereBoundary(
-				atmosphere,  r_d, mu_d),
-			make_float3(1.0));
+		return fminf(GetTransmittanceToTopAtmosphereBoundary(atmosphere,  r, mu) / GetTransmittanceToTopAtmosphereBoundary( atmosphere,  r_d, mu_d), make_float3(1.0));
 	}
 }
 
-__device__  float3 GetTransmittanceToSun(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
-	float r, float mu_s) {
+__device__  float3 GetTransmittanceToSun(const AtmosphereParameters atmosphere, float r, float mu_s) {
+
 	float sin_theta_h = atmosphere.bottom_radius / r;
 	float cos_theta_h = -sqrt(max(1.0 - sin_theta_h * sin_theta_h, 0.0));
 	return GetTransmittanceToTopAtmosphereBoundary(
@@ -231,22 +213,16 @@ __device__  float3 GetTransmittanceToSun(
 
 __device__  void ComputeSingleScatteringIntegrand(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
 	float r, float mu, float mu_s, float nu, float d,
 	bool ray_r_mu_intersects_ground,
 	float3 &rayleigh, float3 &mie) {
 	float r_d = ClampRadius(atmosphere, sqrt(d * d + 2.0 * r * mu * d + r * r));
 	float mu_s_d = ClampCosine((r * mu_s + d * nu) / r_d);
 	float3 transmittance =
-		GetTransmittance(
-			atmosphere, transmittance_texture, r, mu, d,
-			ray_r_mu_intersects_ground) *
-		GetTransmittanceToSun(
-			atmosphere, transmittance_texture, r_d, mu_s_d);
-	rayleigh = transmittance * GetProfileDensity(
-		atmosphere.rayleigh_density, r_d - atmosphere.bottom_radius);
-	mie = transmittance * GetProfileDensity(
-		atmosphere.mie_density, r_d - atmosphere.bottom_radius);
+		GetTransmittance( atmosphere, r, mu, d, ray_r_mu_intersects_ground) *
+		GetTransmittanceToSun( atmosphere, r_d, mu_s_d);
+	rayleigh = transmittance * GetProfileDensity(atmosphere.rayleigh_density, r_d - atmosphere.bottom_radius);
+	mie = transmittance * GetProfileDensity(atmosphere.mie_density, r_d - atmosphere.bottom_radius);
 }
 
 __device__  float DistanceToNearestAtmosphereBoundary(const AtmosphereParameters atmosphere,
@@ -261,7 +237,6 @@ __device__  float DistanceToNearestAtmosphereBoundary(const AtmosphereParameters
 
 __device__  void ComputeSingleScattering(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
 	float r, float mu, float mu_s, float nu,
 	bool ray_r_mu_intersects_ground,
 	float3 &rayleigh, float3 &mie) {
@@ -284,8 +259,7 @@ __device__  void ComputeSingleScattering(
 		// The Rayleigh and Mie single scattering at the current sample point.
 		float3 rayleigh_i;
 		float3 mie_i;
-		ComputeSingleScatteringIntegrand(atmosphere, transmittance_texture,
-			r, mu, mu_s, nu, d_i, ray_r_mu_intersects_ground, rayleigh_i, mie_i);
+		ComputeSingleScatteringIntegrand(atmosphere, r, mu, mu_s, nu, d_i, ray_r_mu_intersects_ground, rayleigh_i, mie_i);
 		// Sample weight (from the trapezoidal rule).
 		float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
 		rayleigh_sum += rayleigh_i * weight_i;
@@ -307,9 +281,11 @@ __device__  float MiePhaseFunction(float g, float nu) {
 	return k * (1.0 + nu * nu) / pow(1.0 + g * g - 2.0 * g * nu, 1.5);
 }
 
-__device__  float4 GetScatteringTextureUvwzFromRMuMuSNu(const AtmosphereParameters atmosphere,
+__device__  float4 GetScatteringTextureUvwzFromRMuMuSNu(
+	const AtmosphereParameters atmosphere,
 	float r, float mu, float mu_s, float nu,
-	bool ray_r_mu_intersects_ground) {
+	bool ray_r_mu_intersects_ground) 
+{
 	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	assert(mu >= -1.0 && mu <= 1.0);
 	assert(mu_s >= -1.0 && mu_s <= 1.0);
@@ -442,27 +418,25 @@ __device__  void GetRMuMuSNuFromScatteringTextureFragCoord(
 }
 
 __device__  void ComputeSingleScatteringTexture(const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture, float3 frag_coord,
-	float3& rayleigh, float3& mie) {
+	float3 frag_coord, float3& rayleigh, float3& mie) {
 	float r;
 	float mu;
 	float mu_s;
 	float nu;
 	bool ray_r_mu_intersects_ground;
-	GetRMuMuSNuFromScatteringTextureFragCoord(atmosphere, frag_coord,
-		r, mu, mu_s, nu, ray_r_mu_intersects_ground);
-	ComputeSingleScattering(atmosphere, transmittance_texture,
-		r, mu, mu_s, nu, ray_r_mu_intersects_ground, rayleigh, mie);
+	GetRMuMuSNuFromScatteringTextureFragCoord(atmosphere, frag_coord, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+	ComputeSingleScattering(atmosphere, r, mu, mu_s, nu, ray_r_mu_intersects_ground, rayleigh, mie);
 }
 
 
 __device__  float3 GetScattering(
 	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t scattering_texture,
+	float4 *scattering_buffer,
 	float r, float mu, float mu_s, float nu,
-	bool ray_r_mu_intersects_ground) {
-	float4 uvwz = GetScatteringTextureUvwzFromRMuMuSNu(
-		atmosphere, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+	bool ray_r_mu_intersects_ground) 
+{
+	
+	float4 uvwz = GetScatteringTextureUvwzFromRMuMuSNu(atmosphere, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
 	float tex_coord_x = uvwz.x * float(SCATTERING_TEXTURE_NU_SIZE - 1);
 	float tex_x = floor(tex_coord_x);
 	float lerp = tex_coord_x - tex_x;
@@ -471,35 +445,28 @@ __device__  float3 GetScattering(
 	float3 uvw1 = make_float3((tex_x + 1.0 + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE),
 		uvwz.z, uvwz.w);
 
-	const float4 texval1 = tex3D<float4>(scattering_texture, uvw0.x, uvw0.y, uvw0.z);
-	const float4 texval2 = tex3D<float4>(scattering_texture, uvw1.x, uvw1.y, uvw1.z);
+	int3 uvw0_i = make_int3(uvw0.x * SCATTERING_TEXTURE_WIDTH, uvw0.y * SCATTERING_TEXTURE_HEIGHT, uvw0.z * SCATTERING_TEXTURE_DEPTH);
+	int3 uvw1_i = make_int3(uvw1.x * SCATTERING_TEXTURE_WIDTH, uvw1.y * SCATTERING_TEXTURE_HEIGHT, uvw1.z * SCATTERING_TEXTURE_DEPTH);
 
-	return float3(make_float3(texval1) * (1.0 - lerp) + make_float3(texval2) * lerp);
+	int index0 = uvw0_i.x + SCATTERING_TEXTURE_WIDTH * (uvw0_i.y + SCATTERING_TEXTURE_HEIGHT * uvw0_i.z);
+	int index1 = uvw1_i.x + SCATTERING_TEXTURE_WIDTH * (uvw1_i.y + SCATTERING_TEXTURE_HEIGHT * uvw1_i.z);
+
+	const float4 val1 = scattering_buffer[index0];
+	const float4 val2 = scattering_buffer[index1];
+
+	return float3(make_float3(val1) * (1.0 - lerp) + make_float3(val2) * lerp);
 }
 
 
-__device__  float3 GetScattering(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t single_rayleigh_scattering_texture,
-	const cudaTextureObject_t single_mie_scattering_texture,
-	const cudaTextureObject_t multiple_scattering_texture,
-	float r, float mu, float mu_s, float nu,
-	bool ray_r_mu_intersects_ground,
-	int scattering_order) {
+__device__  float3 GetScattering(const AtmosphereParameters atmosphere, float r, float mu, float mu_s, float nu,	bool ray_r_mu_intersects_ground, int scattering_order) 
+{
 	if (scattering_order == 1) {
-		float3 rayleigh = GetScattering(
-			atmosphere, single_rayleigh_scattering_texture, r, mu, mu_s, nu,
-			ray_r_mu_intersects_ground);
-		float3 mie = GetScattering(
-			atmosphere, single_mie_scattering_texture, r, mu, mu_s, nu,
-			ray_r_mu_intersects_ground);
-		return rayleigh * RayleighPhaseFunction(nu) +
-			mie * MiePhaseFunction(atmosphere.mie_phase_function_g, nu);
+		float3 rayleigh = GetScattering(atmosphere, atmosphere.delta_rayleigh_scattering_buffer, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+		float3 mie = GetScattering(atmosphere, atmosphere.delta_mie_scattering_buffer, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
+		return rayleigh * RayleighPhaseFunction(nu) + mie * MiePhaseFunction(atmosphere.mie_phase_function_g, nu);
 	}
 	else {
-		return GetScattering(
-			atmosphere, multiple_scattering_texture, r, mu, mu_s, nu,
-			ray_r_mu_intersects_ground);
+		return GetScattering(atmosphere, atmosphere.scattering_buffer, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
 	}
 }
 
@@ -553,51 +520,38 @@ __device__  float3 ComputeScatteringDensity(
 		float3 transmittance_to_ground = make_float3(0.0f);
 		float3 ground_albedo = make_float3(0.0f);
 		if (ray_r_theta_intersects_ground) {
-			distance_to_ground =
-				DistanceToBottomAtmosphereBoundary(atmosphere, r, cos_theta);
-			transmittance_to_ground =
-				GetTransmittance(atmosphere, transmittance_texture, r, cos_theta,
-					distance_to_ground, true /* ray_intersects_ground */);
+			distance_to_ground = DistanceToBottomAtmosphereBoundary(atmosphere, r, cos_theta);
+			transmittance_to_ground = GetTransmittance(atmosphere, r, cos_theta, distance_to_ground, true);
 			ground_albedo = atmosphere.ground_albedo;
 		}
 
 		for (int m = 0; m < 2 * SAMPLE_COUNT; ++m) {
 			float phi = (float(m) + 0.5) * dphi;
-			float3 omega_i =
-				make_float3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+			float3 omega_i = make_float3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
 			float domega_i = (dtheta / rad) * (dphi / rad) * sin(theta) * sr;
 
 			// The radiance L_i arriving from float3 omega_i after n-1 bounces is
 			// the sum of a term given by the precomputed scattering texture for the
 			// (n-1)-th order:
 			float nu1 = dot(omega_s, omega_i);
-			float3 incident_radiance = GetScattering(atmosphere,
-				single_rayleigh_scattering_texture, single_mie_scattering_texture,
-				multiple_scattering_texture, r, omega_i.z, mu_s, nu1,
-				ray_r_theta_intersects_ground, scattering_order - 1);
+			float3 incident_radiance = GetScattering(atmosphere, r, omega_i.z, mu_s, nu1, ray_r_theta_intersects_ground, scattering_order - 1);
 
 			// and of the contribution from the light paths with n-1 bounces and whose
 			// last bounce is on the ground. This contribution is the product of the
 			// transmittance to the ground, the ground albedo, the ground BRDF, and
 			// the irradiance received on the ground after n-2 bounces.
-			float3 ground_normal =
-				normalize(zenith_direction * r + omega_i * distance_to_ground);
-			float3 ground_irradiance = GetIrradiance(
-				atmosphere, irradiance_texture, atmosphere.bottom_radius,
-				dot(ground_normal, omega_s));
-			incident_radiance += transmittance_to_ground *
-				ground_albedo * (1.0 / (PI * sr)) * ground_irradiance;
+			float3 ground_normal = normalize(zenith_direction * r + omega_i * distance_to_ground);
+			float3 ground_irradiance = GetIrradiance( atmosphere, irradiance_texture, atmosphere.bottom_radius, dot(ground_normal, omega_s));
+			incident_radiance += transmittance_to_ground * ground_albedo * (1.0 / (PI * sr)) * ground_irradiance;
 
 			// The radiance finally scattered from float3 omega_i towards float3
 			// -omega is the product of the incident radiance, the scattering
 			// coefficient, and the phase function for directions omega and omega_i
 			// (all this summed over all particle types, i.e. Rayleigh and Mie).
 			float nu2 = dot(omega, omega_i);
-			float rayleigh_density = GetProfileDensity(
-				atmosphere.rayleigh_density, r - atmosphere.bottom_radius);
-			float mie_density = GetProfileDensity(
-				atmosphere.mie_density, r - atmosphere.bottom_radius);
-			rayleigh_mie += incident_radiance * (
+			float rayleigh_density = GetProfileDensity(	atmosphere.rayleigh_density, r - atmosphere.bottom_radius);
+			float mie_density = GetProfileDensity( atmosphere.mie_density, r - atmosphere.bottom_radius);
+			rayleigh_mie += incident_radiance * ( 
 				atmosphere.rayleigh_scattering * rayleigh_density *
 				RayleighPhaseFunction(nu2) +
 				atmosphere.mie_scattering * mie_density *
@@ -614,7 +568,9 @@ __device__  float3 ComputeMultipleScattering(
 	const cudaTextureObject_t transmittance_texture,
 	const cudaTextureObject_t scattering_density_texture,
 	float r, float mu, float mu_s, float nu,
-	bool ray_r_mu_intersects_ground) {
+	bool ray_r_mu_intersects_ground) 
+{
+
 	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	assert(mu >= -1.0 && mu <= 1.0);
 	assert(mu_s >= -1.0 && mu_s <= 1.0);
@@ -641,14 +597,9 @@ __device__  float3 ComputeMultipleScattering(
 		float mu_s_i = ClampCosine((r * mu_s + d_i * nu) / r_i);
 
 		// The Rayleigh and Mie multiple scattering at the current sample point.
-		float3 rayleigh_mie_i =
-			GetScattering(
-				atmosphere, scattering_density_texture, r_i, mu_i, mu_s_i, nu,
-				ray_r_mu_intersects_ground) *
-			GetTransmittance(
-				atmosphere, transmittance_texture, r, mu, d_i,
-				ray_r_mu_intersects_ground) *
-			dx;
+		float3 rayleigh_mie_i =	
+			GetScattering( atmosphere, scattering_density_texture, r_i, mu_i, mu_s_i, nu, ray_r_mu_intersects_ground) *	
+			GetTransmittance( atmosphere, r, mu, d_i, ray_r_mu_intersects_ground) *	dx;
 		// Sample weight (from the trapezoidal rule).
 		float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
 		rayleigh_mie_sum += rayleigh_mie_i * weight_i;
@@ -709,11 +660,7 @@ __device__  float3 ComputeDirectIrradiance(
 }
 
 __device__  float3 ComputeIndirectIrradiance(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t single_rayleigh_scattering_texture,
-	const cudaTextureObject_t single_mie_scattering_texture,
-	const cudaTextureObject_t multiple_scattering_texture,
-	float r, float mu_s, int scattering_order) {
+	const AtmosphereParameters atmosphere, float r, float mu_s, int scattering_order) {
 	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	assert(mu_s >= -1.0 && mu_s <= 1.0);
 	assert(scattering_order >= 1);
@@ -733,11 +680,7 @@ __device__  float3 ComputeIndirectIrradiance(
 			float domega = (dtheta / rad) * (dphi / rad) * sin(theta) * sr;
 
 			float nu = dot(omega, omega_s);
-			result += GetScattering(atmosphere, single_rayleigh_scattering_texture,
-				single_mie_scattering_texture, multiple_scattering_texture,
-				r, omega.z, mu_s, nu, false /* ray_r_theta_intersects_ground */,
-				scattering_order) *
-				omega.z * domega;
+			result += GetScattering(atmosphere, r, omega.z, mu_s, nu, false, scattering_order) * omega.z * domega;
 		}
 	}
 	return result;
@@ -779,15 +722,11 @@ __device__  float3 ComputeDirectIrradianceTexture(
 }
 
 __device__  float3 ComputeIndirectIrradianceTexture(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t single_rayleigh_scattering_texture,
-	const cudaTextureObject_t single_mie_scattering_texture,
-	const cudaTextureObject_t multiple_scattering_texture,
-	float2 frag_coord, int scattering_order) {
+	const AtmosphereParameters atmosphere, float2 frag_coord, int scattering_order) {
 	float r;
 	float mu_s;
 	GetRMuSFromIrradianceTextureUv(	atmosphere, frag_coord / make_float2(IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT), r, mu_s);
-	return ComputeIndirectIrradiance(atmosphere, single_rayleigh_scattering_texture, single_mie_scattering_texture,	multiple_scattering_texture, r, mu_s, scattering_order);
+	return ComputeIndirectIrradiance(atmosphere, r, mu_s, scattering_order);
 }
 
 
@@ -904,9 +843,7 @@ __device__  float3 GetSkyRadiance(
 			atmosphere, scattering_texture, single_mie_scattering_texture,
 			r_p, mu_p, mu_s_p, nu, ray_r_mu_intersects_ground,
 			single_mie_scattering);
-		float3 shadow_transmittance =
-			GetTransmittance(atmosphere, transmittance_texture,
-				r, mu, shadow_length, ray_r_mu_intersects_ground);
+		float3 shadow_transmittance = GetTransmittance(atmosphere, r, mu, shadow_length, ray_r_mu_intersects_ground);
 		scattering = scattering * shadow_transmittance;
 		single_mie_scattering = single_mie_scattering * shadow_transmittance;
 	}
@@ -945,8 +882,7 @@ __device__  float3 GetSkyRadianceToPoint(
 	float d = length(point - camera);
 	bool ray_r_mu_intersects_ground = RayIntersectsGround(atmosphere, r, mu);
 
-	transmittance = GetTransmittance(atmosphere, transmittance_texture,
-		r, mu, d, ray_r_mu_intersects_ground);
+	transmittance = GetTransmittance(atmosphere, r, mu, d, ray_r_mu_intersects_ground);
 
 	float3 single_mie_scattering;
 	float3 scattering = GetCombinedScattering(
@@ -974,15 +910,13 @@ __device__  float3 GetSkyRadianceToPoint(
 	float3 shadow_transmittance = transmittance;
 	if (shadow_length > 0.0 * m) {
 		// This is the T(x,x_s) term in Eq. (17) of our paper, for light shafts.
-		shadow_transmittance = GetTransmittance(atmosphere, transmittance_texture,
-			r, mu, d, ray_r_mu_intersects_ground);
+		shadow_transmittance = GetTransmittance(atmosphere, r, mu, d, ray_r_mu_intersects_ground);
 	}
 	scattering = scattering - shadow_transmittance * scattering_p;
 	single_mie_scattering =
 		single_mie_scattering - shadow_transmittance * single_mie_scattering_p;
 #ifdef COMBINED_SCATTERING_TEXTURES
-	single_mie_scattering = GetExtrapolatedSingleMieScattering(
-		atmosphere, make_float4(scattering, single_mie_scattering.x));
+	single_mie_scattering = GetExtrapolatedSingleMieScattering( atmosphere, make_float4(scattering, single_mie_scattering.x));
 #endif
 
 	// Hack to avoid rendering artifacts when the sun is below the horizon.
@@ -1002,14 +936,10 @@ __device__  float3 GetSunAndSkyIrradiance(
 	float mu_s = dot(point, sun_direction) / r;
 
 	// Indirect irradiance (approximated if the surface is not horizontal).
-	sky_irradiance = GetIrradiance(atmosphere, irradiance_texture, r, mu_s) *
-		(1.0 + dot(normal, point) / r) * 0.5;
+	sky_irradiance = GetIrradiance(atmosphere, irradiance_texture, r, mu_s) * (1.0 + dot(normal, point) / r) * 0.5;
 
 	// Direct irradiance.
-	return atmosphere.solar_irradiance *
-		GetTransmittanceToSun(
-			atmosphere, transmittance_texture, r, mu_s) *
-		max(dot(normal, sun_direction), 0.0);
+	return atmosphere.solar_irradiance * GetTransmittanceToSun(atmosphere,  r, mu_s) * max(dot(normal, sun_direction), 0.0);
 }
 
 extern "C" __global__ void calculate_transmittance(const AtmosphereParameters atmosphere) {
@@ -1036,13 +966,18 @@ extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameter
 	frag_coord += make_float2(0.5f, 0.5f);
 
 	if(!blend) atmosphere.irradiance_buffer[idx] = make_float3(.0f);
-	else atmosphere.irradiance_buffer[idx] += atmosphere.irradiance_buffer[idx];
+	
+	float3 temp_val = atmosphere.irradiance_buffer[idx];
 
 	atmosphere.delta_irradience_buffer[idx] = ComputeDirectIrradianceTexture(atmosphere, frag_coord);
+	
+	if(blend) atmosphere.irradiance_buffer[idx] += temp_val;
+
+	
 
 }
 
-extern "C" __global__ void calculate_indirect_irradiance(const AtmosphereParameters atmosphere, const int blend, const int scattering_order) {
+extern "C" __global__ void calculate_indirect_irradiance(const AtmosphereParameters atmosphere, const int blend, mat4 luminance_from_radiance , const int scattering_order) {
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1054,6 +989,13 @@ extern "C" __global__ void calculate_indirect_irradiance(const AtmosphereParamet
 
 	float3 delta_irradiance_value = ComputeIndirectIrradianceTexture(atmosphere, frag_coord, scattering_order);
 
+	float3 temp_val = atmosphere.irradiance_buffer[idx];
+
+	atmosphere.irradiance_buffer[idx] = luminance_from_radiance * delta_irradiance_value;
+
+	atmosphere.delta_irradience_buffer[idx] = atmosphere.irradiance_buffer[idx];
+
+	if (blend) atmosphere.irradiance_buffer[idx] += temp_val;
 
 }
 
@@ -1075,12 +1017,35 @@ extern "C" __global__ void calculate__scattering_density(const int width, const 
 
 }
 
-extern "C" __global__ void calculate_single_scattering(const int width, const int height){
+extern "C" __global__ void calculate_single_scattering(const AtmosphereParameters atmosphere, const float4 blend, mat4 luminance_from_radiance){
 	
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
-	if (x >= width || y >= height) return;
-	const unsigned int idx = y * width + x;
+	int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+	if (x >= SCATTERING_TEXTURE_WIDTH || y >= SCATTERING_TEXTURE_HEIGHT || z>= SCATTERING_TEXTURE_DEPTH) return;
+	
+	const unsigned int idx = x + SCATTERING_TEXTURE_WIDTH * (y + SCATTERING_TEXTURE_HEIGHT * z);
+
+	float3 frag_coord = make_float3(x, y, z);
+	frag_coord += make_float3(0.5f, 0.5f, 0.5f);
+
+	float3 delta_rayleigh, delta_mie;
+
+	float4 temp_scatter, temp_single_scatter;
+	temp_scatter = atmosphere.scattering_buffer[idx];
+	temp_single_scatter = atmosphere.optional_mie_single_scattering_buffer[idx];
+
+	ComputeSingleScatteringTexture(atmosphere, frag_coord, delta_rayleigh, delta_mie);
+
+	atmosphere.delta_rayleigh_scattering_buffer[idx] = make_float4(delta_rayleigh, 1.0f);
+	atmosphere.delta_mie_scattering_buffer[idx] = make_float4(delta_mie, 1.0f);
+
+	atmosphere.scattering_buffer[idx] = make_float4(luminance_from_radiance * delta_rayleigh, (luminance_from_radiance * delta_mie).x);
+	atmosphere.optional_mie_single_scattering_buffer[idx] = make_float4(delta_mie, 1.0f);
+
+	if (blend.z) atmosphere.scattering_buffer[idx] += temp_scatter;
+	if (blend.w) atmosphere.optional_mie_single_scattering_buffer[idx] += temp_single_scatter;
 
 }
 

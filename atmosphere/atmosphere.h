@@ -118,7 +118,6 @@ public:
 	atmosphere_error_t init(bool , bool);
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
 	atmosphere_error_t precompute(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
-
 private:
 	DensityProfile adjust_units(DensityProfile density);
 	void print_texture(float3 *buffer ,const char* filename, const int width, const int height);

@@ -52,7 +52,7 @@
 #include "atmosphere/constants.h"
 
 #include "helper_math.h"
-
+#include "matrix_math.h"
 
 // Functions that hold the texture calculation kernels from atmosphere_kernels.ptx file
 atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
@@ -231,11 +231,16 @@ void atmosphere::print_texture(float4 * buffer, const char * filename, const int
 atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
 
 	float3 lambdas;
+	int BLEND = blend ? 1 : 0;
+
+	mat4 lfrm; // luminance_from_radiance_matrix
 
 	if (lambda_ptr == nullptr)	lambdas = make_float3(kDefaultLambdas[0], kDefaultLambdas[1], kDefaultLambdas[2]);
 	else lambdas = make_float3(lambda_ptr[0], lambda_ptr[1], lambda_ptr[2]);
-
 	if (luminance_from_radiance == nullptr) luminance_from_radiance = kDefaultLuminanceFromRadiance;
+
+	lfrm = lfrm.toMatrix(luminance_from_radiance);
+	lfrm.print();
 
 	if (m_use_luminance == PRECOMPUTED) {
 		sky_k_r = sky_k_g = sky_k_b = MAX_LUMINOUS_EFFICACY;
@@ -316,13 +321,11 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	cudaDeviceSynchronize();
 	if (result != CUDA_SUCCESS) return ATMO_LAUNCH_ERR;
 
-
-
-	float3 *host_transmittance_buffer = new float3[TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT]; 
+#ifdef DEBUG_TEXTURES // Print transmittance values
+	float3 *host_transmittance_buffer = new float3[TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT];
 
 	cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, transmittance_size, cudaMemcpyDeviceToHost);
 
-#ifdef DEBUG_TEXTURES // Print transmittance values
 	print_texture(host_transmittance_buffer, "transmittance.jpg", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
 	
 #endif
@@ -376,7 +379,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 		return ATMO_LAUNCH_ERR;
 	} 
 
-#ifdef DEBUG_TEXTURES // Print transmittance values
+#ifdef DEBUG_TEXTURES // Print irradiance values
 
 	float3 *host_irradiance_buffer = new float3[IRRADIANCE_TEXTURE_WIDTH * IRRADIANCE_TEXTURE_HEIGHT];
 
@@ -387,10 +390,37 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 
 	//***************************************************************************************************************************
 	
+	// Compute single scattering
+	//***************************************************************************************************************************
+	dim3 block_sct(8, 8, 8);
+	dim3 grid_scattering(int(SCATTERING_TEXTURE_WIDTH / block_sct.x) + 1, int(SCATTERING_TEXTURE_HEIGHT / block_sct.y) + 1, int(SCATTERING_TEXTURE_DEPTH / block_sct.z) + 1);
+	int scattering_size = SCATTERING_TEXTURE_WIDTH * SCATTERING_TEXTURE_HEIGHT * SCATTERING_TEXTURE_DEPTH * sizeof(float4); 
+	
+	cudaMalloc(&atmosphere_parameters.delta_rayleigh_scattering_buffer, scattering_size);
+	cudaMalloc(&atmosphere_parameters.delta_mie_scattering_buffer, scattering_size);
+	cudaMalloc(&atmosphere_parameters.scattering_buffer, scattering_size);
+	cudaMalloc(&atmosphere_parameters.optional_mie_single_scattering_buffer, scattering_size);
+
+	float4 blend_vec = make_float4(.0f, .0f, BLEND, BLEND);
+
+	void *single_scattering_params[] = {&atmosphere_parameters, &blend_vec, &lfrm};
+	
+	result = cuLaunchKernel(direct_irradiance_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
+	cudaDeviceSynchronize();
+	if (result != CUDA_SUCCESS) {
+		printf("Unable to launch direct irradiance function! \n");
+		return ATMO_LAUNCH_ERR;
+	}
+
+
+	//***************************************************************************************************************************
+
+
 
 	return ATMO_NO_ERR;
 
 }
+
 
 // Initialization function that fills the atmosphere parameters 
 atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_ozone_) {
