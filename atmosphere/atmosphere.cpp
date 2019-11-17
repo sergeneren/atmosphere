@@ -296,8 +296,6 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 
 	const double max_sun_zenith_angle = (m_half_precision ? 102.0 : 120.0) / 180.0 * kPi;
 	atmosphere_parameters.mu_s_min = cos(max_sun_zenith_angle);
-	   	  
-	atmosphere_parameters.luminance_from_radiance = luminance_from_radiance;
 
 
 	// STARTING PRECOMPUTE
@@ -329,38 +327,6 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 	print_texture(host_transmittance_buffer, "transmittance.jpg", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
 	
 #endif
-
-#if 0
-	// Bind transmittance buffer to transmittance texture 
-
-	float4 *texture = new float4[TRANSMITTANCE_TEXTURE_WIDTH*TRANSMITTANCE_TEXTURE_HEIGHT];
-	for (int i = 0; i < TRANSMITTANCE_TEXTURE_WIDTH*TRANSMITTANCE_TEXTURE_HEIGHT; i++) {
-		texture[i] = make_float4(host_transmittance_buffer[i].x, host_transmittance_buffer[i].y, host_transmittance_buffer[i].z, 1.0f);
-	}
-
-	cudaArray_t transmittance_array;
-
-	const cudaChannelFormatDesc channel_desc_val = cudaCreateChannelDesc<float4>();
-	cudaMallocArray(&transmittance_array, &channel_desc_val, TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
-	cudaMemcpy2DToArray(transmittance_array, 0, 0, texture, TRANSMITTANCE_TEXTURE_WIDTH * sizeof(float4), TRANSMITTANCE_TEXTURE_WIDTH * sizeof(float4), TRANSMITTANCE_TEXTURE_HEIGHT, cudaMemcpyHostToDevice);
-
-	cudaResourceDesc res_desc_val;
-	memset(&res_desc_val, 0, sizeof(res_desc_val));
-	res_desc_val.resType = cudaResourceTypeArray;
-	res_desc_val.res.array.array = transmittance_array;
-
-	cudaTextureDesc tex_desc_val;
-	memset(&tex_desc_val, 0, sizeof(tex_desc_val));
-	tex_desc_val.addressMode[0] = cudaAddressModeWrap;
-	tex_desc_val.addressMode[1] = cudaAddressModeClamp;
-	tex_desc_val.addressMode[2] = cudaAddressModeWrap;
-	tex_desc_val.readMode = cudaReadModeElementType;
-
-	cudaCreateTextureObject(&atmosphere_parameters.transmittance_texture, &res_desc_val, &tex_desc_val, NULL) ;
-	cudaDeviceSynchronize();
-	//***************************************************************************************************************************
-#endif
-	
 	
 	// Compute direct irradiance 
 	//***************************************************************************************************************************
@@ -583,8 +549,6 @@ atmosphere_error_t atmosphere::compute_transmittance(double* lambda_ptr, double*
 	const double max_sun_zenith_angle = (m_half_precision ? 102.0 : 120.0) / 180.0 * kPi;
 	atmosphere_parameters.mu_s_min = cos(max_sun_zenith_angle);
 
-	atmosphere_parameters.luminance_from_radiance = luminance_from_radiance;
-
 
 	// Precompute transmittance 
 	//***************************************************************************************************************************
@@ -712,7 +676,19 @@ atmosphere_error_t atmosphere::init(CUmodule &cuda_module, bool use_constant_sol
 
 }
 
-atmosphere::~atmosphere() {}
+atmosphere::~atmosphere() {
+	
+	cudaFree(&atmosphere_parameters.delta_irradience_buffer);
+	cudaFree(&atmosphere_parameters.delta_mie_scattering_buffer);
+	cudaFree(&atmosphere_parameters.delta_multiple_scattering_buffer);
+	cudaFree(&atmosphere_parameters.delta_rayleigh_scattering_buffer);
+	cudaFree(&atmosphere_parameters.delta_scattering_density_buffer);
+	cudaFree(&atmosphere_parameters.irradiance_buffer);
+	cudaFree(&atmosphere_parameters.transmittance_buffer);
+	cudaFree(&atmosphere_parameters.scattering_buffer);
+	cudaFree(&atmosphere_parameters.optional_mie_single_scattering_buffer);
+
+}
 
 atmosphere::atmosphere() {
 	m_use_luminance = APPROXIMATE;

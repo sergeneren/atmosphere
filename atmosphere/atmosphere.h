@@ -169,11 +169,6 @@ public:
 	CUfunction multiple_scattering_function;
 	CUfunction scattering_density_function;
 	CUfunction single_scattering_function;
-
-	float3 *transmittance_buffer;
-	float4 *scattering_buffer;
-	float3 *irradiance_buffer;
-	   	 
 	   
 };
 
