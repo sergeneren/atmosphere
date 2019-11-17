@@ -722,8 +722,7 @@ __device__  float3 ComputeIndirectIrradiance(
 	const float dphi = pi() / float(SAMPLE_COUNT);
 	const float dtheta = pi() / float(SAMPLE_COUNT);
 
-	float3 result =
-		make_float3(0.0f * watt_per_square_meter_per_nm());
+	float3 result =	make_float3(0.0f * watt_per_square_meter_per_nm());
 	float3 omega_s = make_float3(sqrt(1.0 - mu_s * mu_s), 0.0, mu_s);
 	for (int j = 0; j < SAMPLE_COUNT / 2; ++j) {
 		float theta = (float(j) + 0.5) * dtheta;
@@ -1037,7 +1036,10 @@ extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameter
 	frag_coord += make_float2(0.5f, 0.5f);
 
 	if(!blend) atmosphere.irradiance_buffer[idx] = make_float3(.0f);
+	else atmosphere.irradiance_buffer[idx] += atmosphere.irradiance_buffer[idx];
+
 	atmosphere.delta_irradience_buffer[idx] = ComputeDirectIrradianceTexture(atmosphere, frag_coord);
+
 }
 
 extern "C" __global__ void calculate_indirect_irradiance(const int width, const int height){
