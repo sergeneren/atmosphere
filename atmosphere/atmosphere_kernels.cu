@@ -1009,7 +1009,7 @@ extern "C" __global__ void calculate_multiple_scattering(const int width, const 
 
 }
 
-extern "C" __global__ void calculate__scattering_density(const int width, const int height){
+extern "C" __global__ void calculate_scattering_density(const int width, const int height){
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;

@@ -70,7 +70,7 @@ atmosphere_error_t atmosphere::init_functions(CUmodule &cuda_module) {
 	error = cuModuleGetFunction(&multiple_scattering_function, cuda_module, "calculate_multiple_scattering");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
-	error = cuModuleGetFunction(&scattering_density_function, cuda_module, "calculate__scattering_density");
+	error = cuModuleGetFunction(&scattering_density_function, cuda_module, "calculate_scattering_density");
 	if (error != CUDA_SUCCESS) return ATMO_INIT_FUNC_ERR;
 	
 	error = cuModuleGetFunction(&single_scattering_function, cuda_module, "calculate_single_scattering");
@@ -317,7 +317,10 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	void *transmittance_params[] = {&atmosphere_parameters};
 	result = cuLaunchKernel(transmittance_function, grid_transmittance.x, grid_transmittance.y, 1, block.x, block.y, 1, 0, NULL, transmittance_params, NULL) ;
 	cudaDeviceSynchronize();
-	if (result != CUDA_SUCCESS) return ATMO_LAUNCH_ERR;
+	if (result != CUDA_SUCCESS) {
+		printf("Unable to launch direct transmittance function! \n");
+		return ATMO_LAUNCH_ERR;
+	}
 
 #ifdef DEBUG_TEXTURES // Print transmittance values
 	float3 *host_transmittance_buffer = new float3[TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT];
@@ -368,7 +371,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	cudaMalloc(&atmosphere_parameters.delta_irradience_buffer, irradiance_size);
 	cudaMalloc(&atmosphere_parameters.irradiance_buffer, irradiance_size);
 
-	void *irradiance_params[] = { &atmosphere_parameters, (void*)&blend };
+	void *irradiance_params[] = { &atmosphere_parameters, (void*)&BLEND };
 	
 	result = cuLaunchKernel(direct_irradiance_function, grid_irradiance.x, grid_irradiance.y, 1, block.x, block.y, 1, 0, NULL, irradiance_params, NULL);
 	cudaDeviceSynchronize();
@@ -406,13 +409,11 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	result = cuLaunchKernel(single_scattering_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
 	cudaDeviceSynchronize();
 	if (result != CUDA_SUCCESS) {
-		printf("Unable to launch direct irradiance function! \n");
+		printf("Unable to launch direct single scattering function! \n");
 		return ATMO_LAUNCH_ERR;
 	}
 
-
-	//***************************************************************************************************************************
-#ifdef DEBUG_TEXTURES // Print scattering values
+#ifdef DEBUG_TEXTURES // Print single scattering values
 
 	float4 *host_scattering_buffer = new float4[SCATTERING_TEXTURE_WIDTH * SCATTERING_TEXTURE_HEIGHT * SCATTERING_TEXTURE_DEPTH];
 
@@ -425,8 +426,35 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_mie_scattering_buffer, scattering_size, cudaMemcpyDeviceToHost);
 	print_texture(host_scattering_buffer, "delta_mie_scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
 
-
 #endif
+
+	//***************************************************************************************************************************
+
+	// Compute the 2nd, 3rd and 4th order of scattering, in sequence.
+	for (int scattering_order = 2; scattering_order <= num_scattering_orders; ++scattering_order)
+	{
+	
+		// Compute scattering density
+		//***************************************************************************************************************************
+	
+		cudaMalloc(&atmosphere_parameters.delta_scattering_density_buffer, scattering_size);
+		blend_vec = make_float4(.0f);
+		
+		void *scattering_density_params[] = { &atmosphere_parameters, &blend_vec, &lfrm, &scattering_order};
+		result = cuLaunchKernel(scattering_density_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
+		cudaDeviceSynchronize();
+		if (result != CUDA_SUCCESS) {
+			printf("Unable to launch direct single scattering function! \n");
+			return ATMO_LAUNCH_ERR;
+		}
+	
+	}
+
+
+
+
+
+
 
 
 	return ATMO_NO_ERR;
