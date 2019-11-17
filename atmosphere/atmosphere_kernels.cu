@@ -556,11 +556,7 @@ __device__  float3 ComputeScatteringDensity(
 
 
 __device__  float3 ComputeMultipleScattering(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
-	const cudaTextureObject_t scattering_density_texture,
-	float r, float mu, float mu_s, float nu,
-	bool ray_r_mu_intersects_ground) 
+	const AtmosphereParameters atmosphere, float r, float mu, float mu_s, float nu, bool ray_r_mu_intersects_ground) 
 {
 
 	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
@@ -590,7 +586,7 @@ __device__  float3 ComputeMultipleScattering(
 
 		// The Rayleigh and Mie multiple scattering at the current sample point.
 		float3 rayleigh_mie_i =	
-			GetScattering( atmosphere, scattering_density_texture, r_i, mu_i, mu_s_i, nu, ray_r_mu_intersects_ground) *	
+			GetScattering( atmosphere, atmosphere.delta_scattering_density_buffer, r_i, mu_i, mu_s_i, nu, ray_r_mu_intersects_ground) *	
 			GetTransmittance( atmosphere, r, mu, d_i, ray_r_mu_intersects_ground) *	dx;
 		// Sample weight (from the trapezoidal rule).
 		float weight_i = (i == 0 || i == SAMPLE_COUNT) ? 0.5 : 1.0;
@@ -612,19 +608,14 @@ __device__  float3 ComputeScatteringDensityTexture(
 }
 
 __device__  float3 ComputeMultipleScatteringTexture(
-	const AtmosphereParameters atmosphere,
-	const cudaTextureObject_t transmittance_texture,
-	const cudaTextureObject_t scattering_density_texture,
-	float3 frag_coord, float& nu) {
+	const AtmosphereParameters atmosphere, float3 frag_coord, float& nu) {
 	float r;
 	float mu;
 	float mu_s;
 	bool ray_r_mu_intersects_ground;
 	GetRMuMuSNuFromScatteringTextureFragCoord(atmosphere, frag_coord,
 		r, mu, mu_s, nu, ray_r_mu_intersects_ground);
-	return ComputeMultipleScattering(atmosphere, transmittance_texture,
-		scattering_density_texture, r, mu, mu_s, nu,
-		ray_r_mu_intersects_ground);
+	return ComputeMultipleScattering(atmosphere, r, mu, mu_s, nu, ray_r_mu_intersects_ground);
 }
 
 __device__  float3 ComputeDirectIrradiance(
@@ -956,9 +947,7 @@ extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameter
 	atmosphere.delta_irradience_buffer[idx] = ComputeDirectIrradianceTexture(atmosphere, frag_coord);
 	
 	if(blend) atmosphere.irradiance_buffer[idx] += temp_val;
-
 	
-
 }
 
 extern "C" __global__ void calculate_indirect_irradiance(const AtmosphereParameters atmosphere, const int blend, mat4 luminance_from_radiance , const int scattering_order) {
@@ -971,7 +960,7 @@ extern "C" __global__ void calculate_indirect_irradiance(const AtmosphereParamet
 	float2 frag_coord = make_float2(x, y);
 	frag_coord += make_float2(0.5f, 0.5f);
 
-	float3 delta_irradiance_value = ComputeIndirectIrradianceTexture(atmosphere, frag_coord, scattering_order);
+	float3 delta_irradiance_value = ComputeIndirectIrradianceTexture(atmosphere, frag_coord, scattering_order-1);
 
 	float3 temp_val = atmosphere.irradiance_buffer[idx];
 
@@ -983,12 +972,29 @@ extern "C" __global__ void calculate_indirect_irradiance(const AtmosphereParamet
 
 }
 
-extern "C" __global__ void calculate_multiple_scattering(const int width, const int height){
+extern "C" __global__ void calculate_multiple_scattering(const AtmosphereParameters atmosphere, const int blend, mat4 luminance_from_radiance, const int scattering_order){
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
-	if (x >= width || y >= height) return;
-	const unsigned int idx = y * width + x;
+	int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+	if (x >= SCATTERING_TEXTURE_WIDTH || y >= SCATTERING_TEXTURE_HEIGHT || z >= SCATTERING_TEXTURE_DEPTH) return;
+
+	const unsigned int idx = x + SCATTERING_TEXTURE_WIDTH * (y + SCATTERING_TEXTURE_HEIGHT * z);
+
+	float3 frag_coord = make_float3(x, y, z);
+	frag_coord += make_float3(0.5f, 0.5f, 0.5f);
+
+	float4 temp_val = atmosphere.scattering_buffer[idx];
+
+	float nu;
+	float3 delta_multiple_scattering_value = ComputeMultipleScatteringTexture(atmosphere, frag_coord, nu);
+
+	atmosphere.delta_multiple_scattering_buffer[idx] = make_float4(delta_multiple_scattering_value, 1.0f);
+
+	atmosphere.scattering_buffer[idx] = make_float4((luminance_from_radiance * delta_multiple_scattering_value) / RayleighPhaseFunction(nu), .0f);
+
+	if (blend) atmosphere.scattering_buffer[idx] += temp_val;
 
 }
 

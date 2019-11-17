@@ -465,19 +465,158 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 
 		void *indirect_irradiance_params[] = { &atmosphere_parameters, &blend_vec, &lfrm, &scattering_order };
 
+		result = cuLaunchKernel(indirect_irradiance_function, grid_irradiance.x, grid_irradiance.y, 1, block.x, block.y, 1, 0, NULL, indirect_irradiance_params, NULL);
+		cudaDeviceSynchronize();
+		if (result != CUDA_SUCCESS) {
+			printf("Unable to launch direct irradiance function! \n");
+			return ATMO_LAUNCH_ERR;
+		}
+
+#ifdef DEBUG_TEXTURES // Print indirect irradiance values
+
+		cudaMemcpy(host_irradiance_buffer, atmosphere_parameters.delta_irradience_buffer, irradiance_size, cudaMemcpyDeviceToHost);
+		std::string name_indirect("delta_irradiance_");
+		name_indirect.append(std::to_string(scattering_order));
+		name_indirect.append(".png");
+		print_texture(host_irradiance_buffer, name_indirect.c_str(), IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
+
+#endif
+
+		// Compute multiple scattering
+		//***************************************************************************************************************************
+
+		cudaMalloc(&atmosphere_parameters.delta_multiple_scattering_buffer, scattering_size);
+		void *multiple_scattering_params[] = { &atmosphere_parameters, &blend_vec, &lfrm, &scattering_order };
+		result = cuLaunchKernel(multiple_scattering_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
+		cudaDeviceSynchronize();
+		if (result != CUDA_SUCCESS) {
+			printf("Unable to launch direct scattering density function! \n");
+			return ATMO_LAUNCH_ERR;
+		}
+#ifdef DEBUG_TEXTURES // Print multiple scattering values
+
+		cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_multiple_scattering_buffer, scattering_size, cudaMemcpyDeviceToHost);
+		std::string name_multi("multiple_scattering_");
+		name_multi.append(std::to_string(scattering_order));
+		name_multi.append(".png");
+
+		print_texture(host_scattering_buffer, name_multi.c_str(), SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
+
+#endif
+
 
 	}
 
+	return ATMO_NO_ERR;
+
+}
+
+// Precomputes the textures that will be sent to the render kernel
+atmosphere_error_t atmosphere::compute_transmittance(TextureBuffer* buffer, double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
+
+	float3 lambdas;
+	int BLEND = blend ? 1 : 0;
+
+	mat4 lfrm; // luminance_from_radiance_matrix
+
+	if (lambda_ptr == nullptr)	lambdas = make_float3(kDefaultLambdas[0], kDefaultLambdas[1], kDefaultLambdas[2]);
+	else lambdas = make_float3(lambda_ptr[0], lambda_ptr[1], lambda_ptr[2]);
+	if (luminance_from_radiance == nullptr) luminance_from_radiance = kDefaultLuminanceFromRadiance;
+
+	lfrm = lfrm.toMatrix(luminance_from_radiance);
+
+	if (m_use_luminance == PRECOMPUTED) {
+		sky_k_r = sky_k_g = sky_k_b = MAX_LUMINOUS_EFFICACY;
+	}
+	else {
+		compute_spectral_radiance_to_luminance_factors(m_wave_lengths, m_solar_irradiance, -3 /* lambda_power */, sky_k_r, sky_k_g, sky_k_b);
+	}
+
+	compute_spectral_radiance_to_luminance_factors(m_wave_lengths, m_solar_irradiance, 0, sun_k_r, sun_k_g, sun_k_b);
+
+	atmosphere_parameters.sky_spectral_radiance_to_luminance = make_float3(sky_k_r, sky_k_g, sky_k_b);
+	atmosphere_parameters.sun_spectral_radiance_to_luminance = make_float3(sun_k_r, sun_k_g, sun_k_b);
+
+	atmosphere_parameters.solar_irradiance.x = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.x);
+	atmosphere_parameters.solar_irradiance.y = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.y);
+	atmosphere_parameters.solar_irradiance.z = interpolate(m_wave_lengths, m_solar_irradiance, lambdas.z);
 
 
+	atmosphere_parameters.sun_angular_radius = m_sun_angular_radius;
+	atmosphere_parameters.bottom_radius = m_bottom_radius / m_length_unit_in_meters;
+	atmosphere_parameters.top_radius = m_top_radius / m_length_unit_in_meters;
+
+	DensityProfile rayleigh_density;
+	rayleigh_density.layers[0] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+	rayleigh_density.layers[1] = { 0.0, 1.0, -1.0 / kRayleighScaleHeight, 0.0, 0.0 };
+	atmosphere_parameters.rayleigh_density = adjust_units(rayleigh_density);
+	atmosphere_parameters.rayleigh_scattering.x = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.rayleigh_scattering.y = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.rayleigh_scattering.z = interpolate(m_wave_lengths, m_rayleigh_scattering, lambdas.z) * m_length_unit_in_meters;
+
+	DensityProfile mie_density;
+	mie_density.layers[0] = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+	mie_density.layers[1] = { 0.0, 1.0, -1.0 / kMieScaleHeight, 0.0, 0.0 };
+	atmosphere_parameters.mie_density = adjust_units(mie_density);
+	atmosphere_parameters.mie_scattering.x = interpolate(m_wave_lengths, m_mie_scattering, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_scattering.y = interpolate(m_wave_lengths, m_mie_scattering, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_scattering.z = interpolate(m_wave_lengths, m_mie_scattering, lambdas.z) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_extinction.x = interpolate(m_wave_lengths, m_mie_scattering, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_extinction.y = interpolate(m_wave_lengths, m_mie_scattering, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_extinction.z = interpolate(m_wave_lengths, m_mie_scattering, lambdas.z) * m_length_unit_in_meters;
+	atmosphere_parameters.mie_phase_function_g = m_mie_phase_function_g;
 
 
+	DensityProfile ozone_density;
+	ozone_density.layers[0] = { 25000.0, 0.0, 0.0, 1.0 / 15000.0, -2.0 / 3.0 };
+	ozone_density.layers[1] = { 0.0, 0.0, 0.0, -1.0 / 15000.0, 8.0 / 3.0 };
+	atmosphere_parameters.absorption_density = adjust_units(ozone_density);
 
+	atmosphere_parameters.absorption_extinction.x = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.x) * m_length_unit_in_meters;
+	atmosphere_parameters.absorption_extinction.y = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.y) * m_length_unit_in_meters;
+	atmosphere_parameters.absorption_extinction.z = interpolate(m_wave_lengths, m_absorption_extinction, lambdas.z) * m_length_unit_in_meters;
+
+	atmosphere_parameters.ground_albedo.x = interpolate(m_wave_lengths, m_ground_albedo, lambdas.x);
+	atmosphere_parameters.ground_albedo.y = interpolate(m_wave_lengths, m_ground_albedo, lambdas.y);
+	atmosphere_parameters.ground_albedo.z = interpolate(m_wave_lengths, m_ground_albedo, lambdas.z);
+
+	const double max_sun_zenith_angle = (m_half_precision ? 102.0 : 120.0) / 180.0 * kPi;
+	atmosphere_parameters.mu_s_min = cos(max_sun_zenith_angle);
+
+	atmosphere_parameters.luminance_from_radiance = luminance_from_radiance;
+
+
+	// Precompute transmittance 
+	//***************************************************************************************************************************
+
+	CUresult result;
+
+	dim3 block(8, 8, 1);
+	dim3 grid_transmittance(int(TRANSMITTANCE_TEXTURE_WIDTH / block.x) + 1, int(TRANSMITTANCE_TEXTURE_HEIGHT / block.y) + 1, 1);
+	int transmittance_size = TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT * sizeof(float3);
+
+	void *transmittance_params[] = { &atmosphere_parameters };
+	result = cuLaunchKernel(transmittance_function, grid_transmittance.x, grid_transmittance.y, 1, block.x, block.y, 1, 0, NULL, transmittance_params, NULL);
+	cudaDeviceSynchronize();
+	if (result != CUDA_SUCCESS) {
+		printf("Unable to launch direct transmittance function! \n");
+		return ATMO_LAUNCH_ERR;
+	}
+
+#ifdef DEBUG_TEXTURES // Print transmittance values
+	float3 *host_transmittance_buffer = new float3[TRANSMITTANCE_TEXTURE_WIDTH * TRANSMITTANCE_TEXTURE_HEIGHT];
+
+	cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, transmittance_size, cudaMemcpyDeviceToHost);
+
+	print_texture(host_transmittance_buffer, "transmittance.jpg", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
+
+#endif
 
 
 	return ATMO_NO_ERR;
 
 }
+
 
 
 // Initialization function that fills the atmosphere parameters 
@@ -556,8 +695,19 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 				return ATMO_INIT_ERR;
 			}
 		}
-	}
 
+		// After the above iterations, the transmittance texture contains the
+		// transmittance for the 3 wavelengths used at the last iteration. But we
+		// want the transmittance at kLambdaR, kLambdaG, kLambdaB instead, so we
+		// must recompute it here for these 3 wavelengths:
+		atmosphere_error_t error = compute_transmittance(m_texture_buffer, nullptr, nullptr, false, num_scattering_orders);
+		if (error != ATMO_NO_ERR) {
+			printf("Unable to precompute!");
+			return ATMO_INIT_ERR;
+		}
+			   
+	}
+	
 	return ATMO_NO_ERR;
 
 }
@@ -569,7 +719,7 @@ atmosphere::~atmosphere() {
 }
 
 atmosphere::atmosphere() {
-	m_use_luminance = NONE;
+	m_use_luminance = APPROXIMATE;
 	atmosphere_textures = new AtmosphereTextures;
 
 }
