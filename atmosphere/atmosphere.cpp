@@ -219,7 +219,6 @@ void atmosphere::print_texture(float4 * buffer, const char * filename, const int
 			data[idx++] = min(max(0, unsigned char(buffer[index].y * 255)), 255);
 			data[idx++] = min(max(0, unsigned char(buffer[index].z * 255)), 255);
 			data[idx++] = min(max(0, unsigned char(buffer[index].w * 255)), 255);
-
 		}
 	}
 	stbi_flip_vertically_on_write(1);
@@ -240,7 +239,6 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 	if (luminance_from_radiance == nullptr) luminance_from_radiance = kDefaultLuminanceFromRadiance;
 
 	lfrm = lfrm.toMatrix(luminance_from_radiance);
-	lfrm.print();
 
 	if (m_use_luminance == PRECOMPUTED) {
 		sky_k_r = sky_k_g = sky_k_b = MAX_LUMINOUS_EFFICACY;
@@ -405,7 +403,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 
 	void *single_scattering_params[] = {&atmosphere_parameters, &blend_vec, &lfrm};
 	
-	result = cuLaunchKernel(direct_irradiance_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
+	result = cuLaunchKernel(single_scattering_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
 	cudaDeviceSynchronize();
 	if (result != CUDA_SUCCESS) {
 		printf("Unable to launch direct irradiance function! \n");
@@ -414,7 +412,21 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 
 
 	//***************************************************************************************************************************
+#ifdef DEBUG_TEXTURES // Print scattering values
 
+	float4 *host_scattering_buffer = new float4[SCATTERING_TEXTURE_WIDTH * SCATTERING_TEXTURE_HEIGHT * SCATTERING_TEXTURE_DEPTH];
+
+	cudaMemcpy(host_scattering_buffer, atmosphere_parameters.scattering_buffer, scattering_size, cudaMemcpyDeviceToHost);
+	print_texture(host_scattering_buffer, "scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
+
+	cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_rayleigh_scattering_buffer, scattering_size, cudaMemcpyDeviceToHost);
+	print_texture(host_scattering_buffer, "delta_rayleigh_scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
+
+	cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_mie_scattering_buffer, scattering_size, cudaMemcpyDeviceToHost);
+	print_texture(host_scattering_buffer, "delta_mie_scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
+
+
+#endif
 
 
 	return ATMO_NO_ERR;

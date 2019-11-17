@@ -10,7 +10,7 @@
 #include "matrix_math.h"
 #include "atmosphere/constants.h"
 #include "atmosphere/definitions.h"
-#include <assert.h>
+//#include <//assert.h>
 
 #define COMBINED_SCATTERING_TEXTURES
 
@@ -33,24 +33,24 @@ __device__  float SafeSqrt(float a) {
 
 __device__  float DistanceToTopAtmosphereBoundary(const AtmosphereParameters atmosphere, float r, float mu) 
 {
-	//assert(r <= atmosphere.top_radius);
-	//assert(mu >= -1.0 && mu <= 1.0);
+	////assert(r <= atmosphere.top_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
 	float discriminant = r * r * (mu * mu - 1.0) + atmosphere.top_radius * atmosphere.top_radius;
 	return ClampDistance(-r * mu + SafeSqrt(discriminant));
 }
 
 __device__  float DistanceToBottomAtmosphereBoundary(const AtmosphereParameters atmosphere,
 	float r, float mu) {
-	assert(r >= atmosphere.bottom_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
+	////assert(r >= atmosphere.bottom_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
 	float discriminant = r * r * (mu * mu - 1.0) + atmosphere.bottom_radius * atmosphere.bottom_radius;
 	return ClampDistance(-r * mu - SafeSqrt(discriminant));
 }
 
 __device__  bool RayIntersectsGround(const AtmosphereParameters atmosphere,
 	float r, float mu) {
-	assert(r >= atmosphere.bottom_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
+	////assert(r >= atmosphere.bottom_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
 	return mu < 0.0 && r * r * (mu * mu - 1.0) +
 		atmosphere.bottom_radius * atmosphere.bottom_radius >= 0.0 * m2();
 }
@@ -70,8 +70,8 @@ __device__  float GetProfileDensity(const DensityProfile profile, float altitude
 __device__  float ComputeOpticalLengthToTopAtmosphereBoundary(
 	const AtmosphereParameters atmosphere, const DensityProfile profile,
 	float r, float mu) {
-	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	//assert(mu >= -1.0 && mu <= 1.0);
+	////assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
 	// float of intervals for the numerical integration.
 	const int SAMPLE_COUNT = 500;
 	// The integration step, i.e. the float of each integration interval.
@@ -94,8 +94,8 @@ __device__  float ComputeOpticalLengthToTopAtmosphereBoundary(
 
 __device__  float3 ComputeTransmittanceToTopAtmosphereBoundary(
 	const AtmosphereParameters atmosphere, float r, float mu) {
-	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	//assert(mu >= -1.0 && mu <= 1.0);
+	////assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
 	return expf(-(
 		atmosphere.rayleigh_scattering *
 		ComputeOpticalLengthToTopAtmosphereBoundary(
@@ -119,8 +119,8 @@ __device__  float GetUnitRangeFromTextureCoord(float u, int texture_size)
 
 __device__  float2 GetTransmittanceTextureUvFromRMu(const AtmosphereParameters atmosphere, float r, float mu) 
 {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
+	////assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
 	// Distance to top atmosphere boundary for a horizontal ray at ground level.
 	float H = sqrtf(atmosphere.top_radius * atmosphere.top_radius -	atmosphere.bottom_radius * atmosphere.bottom_radius);
 	// Distance to the horizon.
@@ -136,8 +136,8 @@ __device__  float2 GetTransmittanceTextureUvFromRMu(const AtmosphereParameters a
 }
 
 __device__  void GetRMuFromTransmittanceTextureUv(const AtmosphereParameters atmosphere, float2 uv, float &r, float &mu) {
-	assert(uv.x >= 0.0 && uv.x <= 1.0);
-	assert(uv.y >= 0.0 && uv.y <= 1.0);
+	////assert(uv.x >= 0.0 && uv.x <= 1.0);
+	////assert(uv.y >= 0.0 && uv.y <= 1.0);
 	float x_mu = GetUnitRangeFromTextureCoord(uv.x, TRANSMITTANCE_TEXTURE_WIDTH);
 	float x_r = GetUnitRangeFromTextureCoord(uv.y, TRANSMITTANCE_TEXTURE_HEIGHT);
 	// Distance to top atmosphere boundary for a horizontal ray at ground level.
@@ -169,7 +169,7 @@ __device__  float3 GetTransmittanceToTopAtmosphereBoundary(
 	const AtmosphereParameters atmosphere,
 	float r, float mu) {
 
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	////assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
 	float2 uv = GetTransmittanceTextureUvFromRMu(atmosphere, r, mu);
 	int x = int(floor(uv.x * TRANSMITTANCE_TEXTURE_WIDTH));
 	int y = int(floor(uv.y * TRANSMITTANCE_TEXTURE_HEIGHT));
@@ -185,9 +185,9 @@ __device__  float3 GetTransmittance(
 	const AtmosphereParameters atmosphere,
 	float r, float mu, float d, bool ray_r_mu_intersects_ground) 
 {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
-	assert(d >= 0.0 * m);
+	////assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
+	////assert(d >= 0.0 * m);
 
 	float r_d = ClampRadius(atmosphere, sqrt(d * d + 2.0 * r * mu * d + r * r));
 	float mu_d = ClampCosine((r * mu + d) / r_d);
@@ -240,10 +240,10 @@ __device__  void ComputeSingleScattering(
 	float r, float mu, float mu_s, float nu,
 	bool ray_r_mu_intersects_ground,
 	float3 &rayleigh, float3 &mie) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
-	assert(nu >= -1.0 && nu <= 1.0);
+	////assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
+	////assert(mu_s >= -1.0 && mu_s <= 1.0);
+	////assert(nu >= -1.0 && nu <= 1.0);
 
 	// float of intervals for the numerical integration.
 	const int SAMPLE_COUNT = 50;
@@ -286,10 +286,10 @@ __device__  float4 GetScatteringTextureUvwzFromRMuMuSNu(
 	float r, float mu, float mu_s, float nu,
 	bool ray_r_mu_intersects_ground) 
 {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
-	assert(nu >= -1.0 && nu <= 1.0);
+	////assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	////assert(mu >= -1.0 && mu <= 1.0);
+	////assert(mu_s >= -1.0 && mu_s <= 1.0);
+	////assert(nu >= -1.0 && nu <= 1.0);
 
 	// Distance to top atmosphere boundary for a horizontal ray at ground level.
 	float H = sqrt(atmosphere.top_radius * atmosphere.top_radius -
@@ -342,10 +342,10 @@ __device__  float4 GetScatteringTextureUvwzFromRMuMuSNu(
 __device__  void GetRMuMuSNuFromScatteringTextureUvwz(const AtmosphereParameters atmosphere,
 	float4 uvwz, float &r, float &mu, float &mu_s,
 	float &nu, bool &ray_r_mu_intersects_ground) {
-	assert(uvwz.x >= 0.0 && uvwz.x <= 1.0);
-	assert(uvwz.y >= 0.0 && uvwz.y <= 1.0);
-	assert(uvwz.z >= 0.0 && uvwz.z <= 1.0);
-	assert(uvwz.w >= 0.0 && uvwz.w <= 1.0);
+	////assert(uvwz.x >= 0.0 && uvwz.x <= 1.0);
+	////assert(uvwz.y >= 0.0 && uvwz.y <= 1.0);
+	////assert(uvwz.z >= 0.0 && uvwz.z <= 1.0);
+	////assert(uvwz.w >= 0.0 && uvwz.w <= 1.0);
 
 	// Distance to top atmosphere boundary for a horizontal ray at ground level.
 	float H = sqrt(atmosphere.top_radius * atmosphere.top_radius -
@@ -483,12 +483,13 @@ __device__  float3 ComputeScatteringDensity(
 	const cudaTextureObject_t single_mie_scattering_texture,
 	const cudaTextureObject_t multiple_scattering_texture,
 	const cudaTextureObject_t irradiance_texture,
-	float r, float mu, float mu_s, float nu, int scattering_order) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
-	assert(nu >= -1.0 && nu <= 1.0);
-	assert(scattering_order >= 2);
+	float r, float mu, float mu_s, float nu, int scattering_order) 
+{
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu >= -1.0 && mu <= 1.0);
+	//assert(mu_s >= -1.0 && mu_s <= 1.0);
+	//assert(nu >= -1.0 && nu <= 1.0);
+	//assert(scattering_order >= 2);
 
 	// Compute unit float3 vectors for the zenith, the view float3 omega and
 	// and the sun float3 omega_s, such that the cosine of the view-zenith
@@ -571,10 +572,10 @@ __device__  float3 ComputeMultipleScattering(
 	bool ray_r_mu_intersects_ground) 
 {
 
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu >= -1.0 && mu <= 1.0);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
-	assert(nu >= -1.0 && nu <= 1.0);
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu >= -1.0 && mu <= 1.0);
+	//assert(mu_s >= -1.0 && mu_s <= 1.0);
+	//assert(nu >= -1.0 && nu <= 1.0);
 
 	// float of intervals for the numerical integration.
 	const int SAMPLE_COUNT = 50;
@@ -648,8 +649,8 @@ __device__  float3 ComputeMultipleScatteringTexture(
 __device__  float3 ComputeDirectIrradiance(
 	const AtmosphereParameters atmosphere,
 	float r, float mu_s) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu_s >= -1.0 && mu_s <= 1.0);
 
 	float alpha_s = atmosphere.sun_angular_radius / rad;
 	// Approximate average of the cosine factor mu_s over the visible fraction of
@@ -661,9 +662,9 @@ __device__  float3 ComputeDirectIrradiance(
 
 __device__  float3 ComputeIndirectIrradiance(
 	const AtmosphereParameters atmosphere, float r, float mu_s, int scattering_order) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
-	assert(scattering_order >= 1);
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu_s >= -1.0 && mu_s <= 1.0);
+	//assert(scattering_order >= 1);
 
 	const int SAMPLE_COUNT = 32;
 	const float dphi = pi() / float(SAMPLE_COUNT);
@@ -689,8 +690,8 @@ __device__  float3 ComputeIndirectIrradiance(
 
 __device__  float2 GetIrradianceTextureUvFromRMuS(const AtmosphereParameters atmosphere,
 	float r, float mu_s) {
-	assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
-	assert(mu_s >= -1.0 && mu_s <= 1.0);
+	//assert(r >= atmosphere.bottom_radius && r <= atmosphere.top_radius);
+	//assert(mu_s >= -1.0 && mu_s <= 1.0);
 	float x_r = (r - atmosphere.bottom_radius) /
 		(atmosphere.top_radius - atmosphere.bottom_radius);
 	float x_mu_s = mu_s * 0.5 + 0.5;
@@ -700,8 +701,8 @@ __device__  float2 GetIrradianceTextureUvFromRMuS(const AtmosphereParameters atm
 
 __device__  void GetRMuSFromIrradianceTextureUv(const AtmosphereParameters atmosphere,
 	float2 uv, float& r, float& mu_s) {
-	assert(uv.x >= 0.0 && uv.x <= 1.0);
-	assert(uv.y >= 0.0 && uv.y <= 1.0);
+	//assert(uv.x >= 0.0 && uv.x <= 1.0);
+	//assert(uv.y >= 0.0 && uv.y <= 1.0);
 	float x_mu_s = GetUnitRangeFromTextureCoord(uv.x, IRRADIANCE_TEXTURE_WIDTH);
 	float x_r = GetUnitRangeFromTextureCoord(uv.y, IRRADIANCE_TEXTURE_HEIGHT);
 
@@ -1029,7 +1030,6 @@ extern "C" __global__ void calculate_single_scattering(const AtmosphereParameter
 
 	float3 frag_coord = make_float3(x, y, z);
 	frag_coord += make_float3(0.5f, 0.5f, 0.5f);
-
 	float3 delta_rayleigh, delta_mie;
 
 	float4 temp_scatter, temp_single_scatter;
