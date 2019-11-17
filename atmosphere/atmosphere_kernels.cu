@@ -1042,12 +1042,18 @@ extern "C" __global__ void calculate_direct_irradiance(const AtmosphereParameter
 
 }
 
-extern "C" __global__ void calculate_indirect_irradiance(const int width, const int height){
+extern "C" __global__ void calculate_indirect_irradiance(const AtmosphereParameters atmosphere, const int blend, const int scattering_order) {
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
-	if (x >= width || y >= height) return;
-	const unsigned int idx = y * width + x;
+	if (x >= IRRADIANCE_TEXTURE_WIDTH || y >= IRRADIANCE_TEXTURE_HEIGHT) return;
+	const unsigned int idx = y * IRRADIANCE_TEXTURE_WIDTH + x;
+
+	float2 frag_coord = make_float2(x, y);
+	frag_coord += make_float2(0.5f, 0.5f);
+
+	float3 delta_irradiance_value = ComputeIndirectIrradianceTexture(atmosphere, frag_coord, scattering_order);
+
 
 }
 
