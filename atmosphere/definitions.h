@@ -88,18 +88,4 @@ struct ALIGN(16) AtmosphereParameters {
 	float4 *optional_mie_single_scattering_buffer;
 };
 
-
-
-struct ALIGN(16) AtmosphereTextures {
-
-
-	cudaTextureObject_t transmittance_texture;
-	cudaTextureObject_t scattering_texture;
-	cudaTextureObject_t irradiance_texture;
-	cudaTextureObject_t optional_single_mie_scattering_texture;
-
-};
-
-
-
 #endif
