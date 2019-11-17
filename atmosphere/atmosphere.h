@@ -115,11 +115,12 @@ public:
 	atmosphere();
 	~atmosphere();
 
-	atmosphere_error_t init(bool , bool);
-	atmosphere_error_t init_functions(CUmodule &cuda_module);
-	atmosphere_error_t precompute(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
-	atmosphere_error_t compute_transmittance(TextureBuffer* buffer, double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
+	atmosphere_error_t init(CUmodule &cuda_module, bool , bool);
+	atmosphere_error_t precompute(double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
+	
 private:
+	atmosphere_error_t init_functions(CUmodule &cuda_module);
+	atmosphere_error_t compute_transmittance(double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
 	DensityProfile adjust_units(DensityProfile density);
 	void print_texture(float3 *buffer ,const char* filename, const int width, const int height);
 	void print_texture(float4 * buffer, const char * filename, const int width, const int height);
@@ -160,8 +161,6 @@ public:
 	bool m_combine_scattering_textures;
 	bool m_half_precision = false;
 
-	TextureBuffer *m_texture_buffer;
-	AtmosphereTextures *atmosphere_textures;
 	AtmosphereParameters atmosphere_parameters;
 
 	CUfunction transmittance_function;

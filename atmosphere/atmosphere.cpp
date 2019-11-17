@@ -226,7 +226,7 @@ void atmosphere::print_texture(float4 * buffer, const char * filename, const int
 }
 
 // Precomputes the textures that will be sent to the render kernel
-atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
+atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
 
 	float3 lambdas;
 	int BLEND = blend ? 1 : 0;
@@ -512,7 +512,7 @@ atmosphere_error_t atmosphere::precompute(TextureBuffer* buffer, double* lambda_
 }
 
 // Precomputes the textures that will be sent to the render kernel
-atmosphere_error_t atmosphere::compute_transmittance(TextureBuffer* buffer, double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
+atmosphere_error_t atmosphere::compute_transmittance(double* lambda_ptr, double* luminance_from_radiance, bool blend, int num_scattering_orders) {
 
 	float3 lambdas;
 	int BLEND = blend ? 1 : 0;
@@ -620,7 +620,10 @@ atmosphere_error_t atmosphere::compute_transmittance(TextureBuffer* buffer, doub
 
 
 // Initialization function that fills the atmosphere parameters 
-atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_ozone_) {
+atmosphere_error_t atmosphere::init(CUmodule &cuda_module, bool use_constant_solar_spectrum_, bool use_ozone_) 
+{
+
+	init_functions(cuda_module);
 
 	m_absorption_density.push_back(new DensityProfileLayer(25000.0f, 0.0f, 0.0f, 1.0f / 15000.0f, -2.0f / 3.0f));
 	m_absorption_density.push_back(new DensityProfileLayer(0.0f, 0.0f, 0.0f, -1.0f / 15000.0f, 8.0f / 3.0f));
@@ -654,14 +657,11 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 	m_max_sun_zenith_angle = 102.0 / 180.0 * kPi;
 	m_length_unit_in_meters = 1000.0f;
 
-	int num_scattering_orders = 4;
-
-	m_texture_buffer = new TextureBuffer(m_half_precision);
-	   	  
+	int num_scattering_orders = 4;	   	  
 	// Start precomputation
 
 	if (num_precomputed_wavelengths() <= 3) {
-		atmosphere_error_t error = 	precompute(m_texture_buffer, nullptr, nullptr, false, num_scattering_orders);
+		atmosphere_error_t error = 	precompute( nullptr, nullptr, false, num_scattering_orders);
 		if (error != ATMO_NO_ERR) {
 			printf("Unable to precompute!");
 			return ATMO_INIT_ERR;
@@ -689,7 +689,7 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 			};
 
 			bool blend = i > 0;
-			atmosphere_error_t error = precompute(m_texture_buffer, lambdas, luminance_from_radiance, blend, num_scattering_orders);
+			atmosphere_error_t error = precompute(lambdas, luminance_from_radiance, blend, num_scattering_orders);
 			if (error != ATMO_NO_ERR) {
 				printf("Unable to precompute!");
 				return ATMO_INIT_ERR;
@@ -700,7 +700,7 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 		// transmittance for the 3 wavelengths used at the last iteration. But we
 		// want the transmittance at kLambdaR, kLambdaG, kLambdaB instead, so we
 		// must recompute it here for these 3 wavelengths:
-		atmosphere_error_t error = compute_transmittance(m_texture_buffer, nullptr, nullptr, false, num_scattering_orders);
+		atmosphere_error_t error = compute_transmittance(nullptr, nullptr, false, num_scattering_orders);
 		if (error != ATMO_NO_ERR) {
 			printf("Unable to precompute!");
 			return ATMO_INIT_ERR;
@@ -712,14 +712,8 @@ atmosphere_error_t atmosphere::init(bool use_constant_solar_spectrum_, bool use_
 
 }
 
-atmosphere::~atmosphere() {
-
-	delete m_texture_buffer;
-
-}
+atmosphere::~atmosphere() {}
 
 atmosphere::atmosphere() {
 	m_use_luminance = APPROXIMATE;
-	atmosphere_textures = new AtmosphereTextures;
-
 }

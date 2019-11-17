@@ -36,9 +36,6 @@ int main(const int argc, const char* argv[]) {
 	error = cuModuleLoad(&atmosphere_module, "atmosphere_kernels.ptx");
 	if (error != CUDA_SUCCESS) printf("Error: unable to load cuda module! %d", error);
 	
-	atmosphere_error_t atmo_error = earth.init_functions(atmosphere_module);
-	if (atmo_error != ATMO_NO_ERR) printf("init error");
-	
-	earth.init(true, true);
+	earth.init(atmosphere_module, true, true);
 	return 0;
 }
