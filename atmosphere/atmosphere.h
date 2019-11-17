@@ -47,7 +47,6 @@
 #include <vector>
 
 #include "atmosphere/definitions.h"
-#include "atmosphere/texture_buffer.h"
 #include "atmosphere/constants.h"
 
 enum atmosphere_error_t {
