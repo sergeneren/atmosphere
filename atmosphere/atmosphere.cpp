@@ -581,8 +581,6 @@ atmosphere_error_t atmosphere::compute_transmittance(double* lambda_ptr, double*
 
 }
 
-
-
 // Initialization function that fills the atmosphere parameters 
 atmosphere_error_t atmosphere::init(CUmodule &cuda_module, bool use_constant_solar_spectrum_, bool use_ozone_) 
 {
