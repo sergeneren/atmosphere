@@ -41,6 +41,7 @@
 #ifndef  __ATMOSPHERE_H__
 #define __ATMOSPHERE_H__
 
+#define DEBUG_TEXTURES
 
 #include <cuda.h>
 #include "texture_types.h"
@@ -91,7 +92,7 @@ constexpr double kMieScaleHeight = 1200.0f;
 constexpr double kMieAngstromAlpha = 0.0;
 constexpr double kMieAngstromBeta = 5.328e-3;
 constexpr double kMieSingleScatteringAlbedo = 0.9;
-constexpr double kGroundAlbedo = 0.1;
+constexpr double kGroundAlbedo = 0.01;
 
 static double kDefaultLuminanceFromRadiance[] = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
 static double kDefaultLambdas[] = { 680.0, 550.0, 440.0 };
@@ -114,10 +115,17 @@ public:
 	atmosphere();
 	~atmosphere();
 
-	atmosphere_error_t init(CUmodule &cuda_module, bool , bool);
+	atmosphere_error_t init();
 	atmosphere_error_t precompute(double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
-	
+	atmosphere_error_t recompute();
 private:
+	atmosphere_error_t clear_buffers();
+	void update_model(const float3 lambdas);
+	void copy_transmittance_texture();
+	void copy_scattering_texture();
+	void copy_irradiance_texture();
+	void copy_single_scattering_texture();
+
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
 	atmosphere_error_t compute_transmittance(double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
 	DensityProfile adjust_units(DensityProfile density);
@@ -129,7 +137,8 @@ private:
 	static double interpolate(const std::vector<double>& wavelengths, const std::vector<double>& wavelength_function, double wavelength);
 	static void compute_spectral_radiance_to_luminance_factors(const std::vector<double>& wavelengths, const std::vector<double>& solar_irradiance, double lambda_power, double& k_r, double& k_g, double& k_b);
 
-public:
+private:
+
 	std::vector<double> m_wave_lengths;
 	std::vector<double> m_solar_irradiance;
 	
@@ -155,12 +164,22 @@ public:
 
 	double m_max_sun_zenith_angle;
 	double m_length_unit_in_meters;
-	LUMINANCE m_use_luminance;
+	
 	inline int num_precomputed_wavelengths() { return m_use_luminance == LUMINANCE::PRECOMPUTED ? 15 : 3; }
 	bool m_combine_scattering_textures;
 	bool m_half_precision = false;
-
+	
+public:
+	bool m_use_constant_solar_spectrum = true;
+	bool m_use_ozone = true;
+	LUMINANCE m_use_luminance;
 	AtmosphereParameters atmosphere_parameters;
+
+	bool debug_textures = false;
+
+private:
+
+	CUmodule atmosphere_module;
 
 	CUfunction transmittance_function;
 	CUfunction direct_irradiance_function;
@@ -168,7 +187,10 @@ public:
 	CUfunction multiple_scattering_function;
 	CUfunction scattering_density_function;
 	CUfunction single_scattering_function;
-	   
+	// Buffer cleaner functions 
+	CUfunction clear_transmittance_buffers_function;
+	CUfunction clear_irradiance_buffers_function;
+	CUfunction clear_scattering_buffers_function;
 };
 
 #endif // ! __ATMOSPHERE_H__

@@ -59,7 +59,7 @@ struct ALIGN(16) AtmosphereParameters {
 	float angle;
 	float bottom_radius;
 	float top_radius;
-
+	int use_luminance;
 	DensityProfile rayleigh_density;
 	float3 rayleigh_scattering;
 
@@ -77,15 +77,23 @@ struct ALIGN(16) AtmosphereParameters {
 
 	// Buffers
 	
-	float3 *delta_irradience_buffer;
+	float4 *delta_irradience_buffer;
 	float4 *delta_rayleigh_scattering_buffer;
 	float4 *delta_mie_scattering_buffer;
 	float4 *delta_scattering_density_buffer;
 	float4 *delta_multiple_scattering_buffer;
-	float3 *transmittance_buffer;
-	float3 *irradiance_buffer;	
+	float4 *transmittance_buffer;
+	float4 *irradiance_buffer;	
 	float4 *scattering_buffer;
 	float4 *optional_mie_single_scattering_buffer;
+	
+	// Textures 
+
+	cudaTextureObject_t transmittance_texture;
+	cudaTextureObject_t scattering_texture;
+	cudaTextureObject_t irradiance_texture;
+	cudaTextureObject_t single_mie_scattering_texture;
+
 };
 
 #endif
