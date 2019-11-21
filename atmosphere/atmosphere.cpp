@@ -743,20 +743,25 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 
 	// Compute single scattering
 	//***************************************************************************************************************************
-	dim3 block_sct(8, 8, 8);
-	dim3 grid_scattering(int(SCATTERING_TEXTURE_WIDTH / block_sct.x) + 1, int(SCATTERING_TEXTURE_HEIGHT / block_sct.y) + 1, int(SCATTERING_TEXTURE_DEPTH / block_sct.z) + 1);
+	dim3 block_sct(8, 8, 1);
+	dim3 grid_scattering(int(SCATTERING_TEXTURE_WIDTH / block_sct.x) + 1, int(SCATTERING_TEXTURE_HEIGHT / block_sct.y) + 1, 1);
 	
 
 	float4 blend_vec = make_float4(.0f, .0f, BLEND, BLEND);
 
-	void *single_scattering_params[] = { &atmosphere_parameters, &blend_vec, &lfrm };
+	for (int i = 0; i < SCATTERING_TEXTURE_DEPTH; ++i) {
 
-	result = cuLaunchKernel(single_scattering_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, single_scattering_params, NULL);
-	checkCudaErrors(cudaDeviceSynchronize());
-	if (result != CUDA_SUCCESS) {
-		printf("Unable to launch direct single scattering function! \n");
-		return ATMO_LAUNCH_ERR;
+		void *single_scattering_params[] = { &atmosphere_parameters, &blend_vec, &lfrm , &i};
+		result = cuLaunchKernel(single_scattering_function, grid_scattering.x, grid_scattering.y, 1, block_sct.x, block_sct.y, 1, 0, NULL, single_scattering_params, NULL);
+		checkCudaErrors(cudaDeviceSynchronize());
+		if (result != CUDA_SUCCESS) {
+			printf("Unable to launch direct single scattering function! \n");
+			return ATMO_LAUNCH_ERR;
+		}
+
 	}
+
+	
 #ifdef DEBUG_TEXTURES // Print single scattering values
 
 	int scattering_size = SCATTERING_TEXTURE_WIDTH * SCATTERING_TEXTURE_HEIGHT * SCATTERING_TEXTURE_DEPTH * sizeof(float4);
