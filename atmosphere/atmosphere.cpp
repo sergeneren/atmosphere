@@ -219,6 +219,26 @@ void atmosphere::compute_spectral_radiance_to_luminance_factors(const std::vecto
 
 }
 
+void atmosphere::convert_spectrum_to_linear_srgb(double &r, double &g, double &b) {
+
+	double x = 0.0;
+	double y = 0.0;
+	double z = 0.0;
+	const int dlambda = 1;
+	for (int lambda = kLambdaMin; lambda < kLambdaMax; lambda += dlambda)
+	{
+		double value = interpolate(m_wave_lengths, m_solar_irradiance, lambda);
+		x += cie_color_matching_function_table_value(lambda, 1) * value;
+		y += cie_color_matching_function_table_value(lambda, 2) * value;
+		z += cie_color_matching_function_table_value(lambda, 3) * value;
+	}
+	const double* xyz2srgb = &XYZ_TO_SRGB[0];
+	r = static_cast<double>(MAX_LUMINOUS_EFFICACY) * (xyz2srgb[0] * x + xyz2srgb[1] * y + xyz2srgb[2] * z) * dlambda;
+	g = static_cast<double>(MAX_LUMINOUS_EFFICACY) * (xyz2srgb[3] * x + xyz2srgb[4] * y + xyz2srgb[5] * z) * dlambda;
+	b = static_cast<double>(MAX_LUMINOUS_EFFICACY) * (xyz2srgb[6] * x + xyz2srgb[7] * y + xyz2srgb[8] * z) * dlambda;
+
+}
+
 DensityProfile atmosphere::adjust_units(DensityProfile density) {
 	density.layers[0].width /= m_length_unit_in_meters;
 	density.layers[0].exp_scale *= m_length_unit_in_meters;
@@ -490,6 +510,28 @@ void atmosphere::copy_single_scattering_texture() {
 	delete[] volume_data_host;
 }
 
+// Update atmosphere parameters that doesn't need a recomputation
+
+void atmosphere::update_model() {
+
+	double white_point_r = 1.0;
+	double white_point_g = 1.0;
+	double white_point_b = 1.0;
+
+	if (m_do_white_balance)
+	{
+		convert_spectrum_to_linear_srgb(white_point_r, white_point_g, white_point_b);
+
+		double white_point = (white_point_r + white_point_g + white_point_b) / 3.0;
+		white_point_r /= white_point;
+		white_point_g /= white_point;
+		white_point_b /= white_point;
+	}
+
+	atmosphere_parameters.white_point = make_float3(float(white_point_r), float(white_point_g), float(white_point_b));
+	atmosphere_parameters.exposure = m_exposure;
+}
+
 // Updates atmosphere_parameters by internal parameters 
 void atmosphere::update_model(const float3 lambdas) {
 
@@ -539,7 +581,7 @@ void atmosphere::update_model(const float3 lambdas) {
 	atmosphere_parameters.ground_albedo.y = interpolate(m_wave_lengths, m_ground_albedo, lambdas.y);
 	atmosphere_parameters.ground_albedo.z = interpolate(m_wave_lengths, m_ground_albedo, lambdas.z);
 
-	const double max_sun_zenith_angle = (m_half_precision ? 102.0 : 120.0) / 180.0 * kPi;
+	const double max_sun_zenith_angle = (m_half_precision ? 102.0 : 120.0) / 180.0 * M_PI;
 	atmosphere_parameters.mu_s_min = cos(max_sun_zenith_angle);
 
 
@@ -559,6 +601,22 @@ void atmosphere::update_model(const float3 lambdas) {
 		break;
 	}
 
+	double white_point_r = 1.0;
+	double white_point_g = 1.0;
+	double white_point_b = 1.0;
+
+	if (m_do_white_balance)
+	{
+		convert_spectrum_to_linear_srgb(white_point_r, white_point_g, white_point_b);
+
+		double white_point = (white_point_r + white_point_g + white_point_b) / 3.0;
+		white_point_r /= white_point;
+		white_point_g /= white_point;
+		white_point_b /= white_point;
+	}
+
+	atmosphere_parameters.white_point = make_float3(float(white_point_r), float(white_point_g), float(white_point_b));
+	atmosphere_parameters.exposure = m_exposure;
 
 }
 
@@ -631,7 +689,7 @@ atmosphere_error_t atmosphere::recompute() {
 					coeff(lambdas[0], 1) * dlambda, coeff(lambdas[1], 1) * dlambda, coeff(lambdas[2], 1) * dlambda,
 					coeff(lambdas[0], 2) * dlambda, coeff(lambdas[1], 2) * dlambda, coeff(lambdas[2], 2) * dlambda
 			};
-
+			
 			bool blend = i > 0;
 			atmosphere_error_t error = precompute(lambdas, luminance_from_radiance, blend, num_scattering_orders);
 			if (error != ATMO_NO_ERR) {
@@ -670,7 +728,7 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 	float3 lambdas;
 	int BLEND = blend ? 1 : 0;
 
-	mat4 lfrm; // luminance_from_radiance_matrix
+	mat3 lfrm; // luminance_from_radiance_matrix
 
 	if (lambda_ptr == nullptr)	lambdas = make_float3(kDefaultLambdas[0], kDefaultLambdas[1], kDefaultLambdas[2]);
 	else lambdas = make_float3(lambda_ptr[0], lambda_ptr[1], lambda_ptr[2]);
@@ -714,7 +772,7 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 
 	checkCudaErrors(cudaMemcpy(host_transmittance_buffer, atmosphere_parameters.transmittance_buffer, transmittance_size, cudaMemcpyDeviceToHost));
 
-	print_texture(host_transmittance_buffer, "transmittance.png", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
+	print_texture(host_transmittance_buffer, "./atmosphere_textures/transmittance.png", TRANSMITTANCE_TEXTURE_WIDTH, TRANSMITTANCE_TEXTURE_HEIGHT);
 	delete[] host_transmittance_buffer;
 #endif
 
@@ -735,7 +793,7 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 	float4 *host_irradiance_buffer = new float4[IRRADIANCE_TEXTURE_WIDTH * IRRADIANCE_TEXTURE_HEIGHT];
 
 	checkCudaErrors(cudaMemcpy(host_irradiance_buffer, atmosphere_parameters.delta_irradience_buffer, irradiance_size, cudaMemcpyDeviceToHost));
-	print_texture(host_irradiance_buffer, "irradiance.png", IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
+	print_texture(host_irradiance_buffer, "./atmosphere_textures/irradiance.png", IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
 	
 #endif
 
@@ -743,15 +801,15 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 
 	// Compute single scattering
 	//***************************************************************************************************************************
-	dim3 block_sct(8, 8, 1);
-	dim3 grid_scattering(int(SCATTERING_TEXTURE_WIDTH / block_sct.x) + 1, int(SCATTERING_TEXTURE_HEIGHT / block_sct.y) + 1, 1);
+	dim3 block_sct(8, 8, 8);
+	dim3 grid_scattering(int(SCATTERING_TEXTURE_WIDTH / block_sct.x) + 1, int(SCATTERING_TEXTURE_HEIGHT / block_sct.y) + 1, int(SCATTERING_TEXTURE_DEPTH / block_sct.z) + 1);
 	
 
 	float4 blend_vec = make_float4(.0f, .0f, BLEND, BLEND);
 
 	for (int i = 0; i < SCATTERING_TEXTURE_DEPTH; ++i) {
 
-		void *single_scattering_params[] = { &atmosphere_parameters, &blend_vec, &lfrm , &i};
+		void *single_scattering_params[] = { &atmosphere_parameters, &blend_vec, &lfrm , &i };
 		result = cuLaunchKernel(single_scattering_function, grid_scattering.x, grid_scattering.y, 1, block_sct.x, block_sct.y, 1, 0, NULL, single_scattering_params, NULL);
 		checkCudaErrors(cudaDeviceSynchronize());
 		if (result != CUDA_SUCCESS) {
@@ -761,22 +819,19 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 
 	}
 
-	
 #ifdef DEBUG_TEXTURES // Print single scattering values
 
 	int scattering_size = SCATTERING_TEXTURE_WIDTH * SCATTERING_TEXTURE_HEIGHT * SCATTERING_TEXTURE_DEPTH * sizeof(float4);
 	float4 *host_scattering_buffer = new float4[SCATTERING_TEXTURE_WIDTH * SCATTERING_TEXTURE_HEIGHT * SCATTERING_TEXTURE_DEPTH];
 
 	checkCudaErrors(cudaMemcpy(host_scattering_buffer, atmosphere_parameters.scattering_buffer, scattering_size, cudaMemcpyDeviceToHost));
-	print_texture(host_scattering_buffer, "scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
+	print_texture(host_scattering_buffer, "./atmosphere_textures/scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
 
 	checkCudaErrors(cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_rayleigh_scattering_buffer, scattering_size, cudaMemcpyDeviceToHost));
-	print_texture(host_scattering_buffer, "delta_rayleigh_scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
+	print_texture(host_scattering_buffer, "./atmosphere_textures/delta_rayleigh_scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
 
 	checkCudaErrors(cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_mie_scattering_buffer, scattering_size, cudaMemcpyDeviceToHost));
-	print_texture(host_scattering_buffer, "delta_mie_scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
-
-	
+	print_texture(host_scattering_buffer, "./atmosphere_textures/delta_mie_scattering.png", SCATTERING_TEXTURE_WIDTH, SCATTERING_TEXTURE_HEIGHT);
 
 #endif
 
@@ -790,19 +845,23 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 		//***************************************************************************************************************************
 
 		blend_vec = make_float4(.0f);
-
-		void *scattering_density_params[] = { &atmosphere_parameters, &blend_vec, &lfrm, &scattering_order };
-		result = cuLaunchKernel(scattering_density_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, scattering_density_params, NULL);
-		checkCudaErrors(cudaDeviceSynchronize());
-		if (result != CUDA_SUCCESS) {
-			printf("Unable to launch direct scattering density function! \n");
-			return ATMO_LAUNCH_ERR;
+		for (int i = 0; i < SCATTERING_TEXTURE_DEPTH; ++i) {
+		
+			void *scattering_density_params[] = { &atmosphere_parameters, &blend_vec, &scattering_order, &i };
+			result = cuLaunchKernel(scattering_density_function, grid_scattering.x, grid_scattering.y, 1, block_sct.x, block_sct.y, 1, 0, NULL, scattering_density_params, NULL);
+			checkCudaErrors(cudaDeviceSynchronize());
+			if (result != CUDA_SUCCESS) {
+				printf("Unable to launch direct scattering density function! \n");
+				return ATMO_LAUNCH_ERR;
+			}
+	
 		}
+		
 
 #ifdef DEBUG_TEXTURES // Print single scattering values
 
 		checkCudaErrors(cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_scattering_density_buffer, scattering_size, cudaMemcpyDeviceToHost));
-		std::string name("scattering_density_");
+		std::string name("./atmosphere_textures/scattering_density_");
 		name.append(std::to_string(scattering_order));
 		name.append(".png");
 
@@ -826,7 +885,7 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 #ifdef DEBUG_TEXTURES // Print indirect irradiance values
 
 		checkCudaErrors(cudaMemcpy(host_irradiance_buffer, atmosphere_parameters.delta_irradience_buffer, irradiance_size, cudaMemcpyDeviceToHost));
-		std::string name_indirect("delta_irradiance_");
+		std::string name_indirect("./atmosphere_textures/delta_irradiance_");
 		name_indirect.append(std::to_string(scattering_order));
 		name_indirect.append(".png");
 		print_texture(host_irradiance_buffer, name_indirect.c_str(), IRRADIANCE_TEXTURE_WIDTH, IRRADIANCE_TEXTURE_HEIGHT);
@@ -836,19 +895,19 @@ atmosphere_error_t atmosphere::precompute(double* lambda_ptr, double* luminance_
 		// Compute multiple scattering
 		//***************************************************************************************************************************
 
-		
-		void *multiple_scattering_params[] = { &atmosphere_parameters, &blend_vec, &lfrm, &scattering_order };
-		result = cuLaunchKernel(multiple_scattering_function, grid_scattering.x, grid_scattering.y, grid_scattering.z, block_sct.x, block_sct.y, block_sct.z, 0, NULL, multiple_scattering_params, NULL);
-		checkCudaErrors(cudaDeviceSynchronize());
-		if (result != CUDA_SUCCESS) {
-			printf("Unable to launch direct scattering density function! \n");
-			return ATMO_LAUNCH_ERR;
+		for (int i = 0; i < SCATTERING_TEXTURE_DEPTH; ++i) {
+			void *multiple_scattering_params[] = { &atmosphere_parameters, &blend_vec, &lfrm, &scattering_order, &i };
+			result = cuLaunchKernel(multiple_scattering_function, grid_scattering.x, grid_scattering.y, 1, block_sct.x, block_sct.y, 1, 0, NULL, multiple_scattering_params, NULL);
+			checkCudaErrors(cudaDeviceSynchronize());
+			if (result != CUDA_SUCCESS) {
+				printf("Unable to launch direct scattering density function! \n");
+				return ATMO_LAUNCH_ERR;
+			}
 		}
-
 #ifdef DEBUG_TEXTURES // Print multiple scattering values
 
 		checkCudaErrors(cudaMemcpy(host_scattering_buffer, atmosphere_parameters.delta_multiple_scattering_buffer, scattering_size, cudaMemcpyDeviceToHost));
-		std::string name_multi("multiple_scattering_");
+		std::string name_multi("./atmosphere_textures/multiple_scattering_");
 		name_multi.append(std::to_string(scattering_order));
 		name_multi.append(".png");
 
@@ -960,7 +1019,7 @@ atmosphere_error_t atmosphere::init()
 	m_rayleigh_density = new DensityProfileLayer(0.0f, 1.0f, -1.0f / float(kRayleighScaleHeight), 0.0f, 0.0f);
 	m_mie_density = new DensityProfileLayer(0.0f, 1.0f, -1.0f / float(kMieScaleHeight), 0.0f, 0.0f);
 	m_mie_phase_function_g = 0.8;
-	m_max_sun_zenith_angle = 102.0 / 180.0 * kPi;
+	m_max_sun_zenith_angle = 120.0 / 180.0 * M_PI;
 	m_length_unit_in_meters = 1.0f;
 
 	int num_scattering_orders = 4;
@@ -1067,4 +1126,6 @@ atmosphere::atmosphere() {
 	checkCudaErrors(cudaMalloc(&atmosphere_parameters.delta_multiple_scattering_buffer, scattering_size));
 
 	m_use_luminance = NONE;
+	m_do_white_balance = true;
+	m_exposure = 1.0f;
 }

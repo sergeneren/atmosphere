@@ -61,9 +61,6 @@ enum atmosphere_error_t {
 
 };
 
-constexpr double kPi = 3.1415926;
-
-
 constexpr double kSolarIrradiance[48] = {
   1.11776, 1.14259, 1.01249, 1.14716, 1.72765, 1.73054, 1.6887, 1.61253,
   1.91198, 2.03474, 2.02042, 2.02212, 1.93377, 1.95809, 1.91686, 1.8298,
@@ -118,6 +115,8 @@ public:
 	atmosphere_error_t init();
 	atmosphere_error_t precompute(double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
 	atmosphere_error_t recompute();
+	void update_model();
+
 private:
 	atmosphere_error_t clear_buffers();
 	void update_model(const float3 lambdas);
@@ -126,6 +125,7 @@ private:
 	void copy_irradiance_texture();
 	void copy_single_scattering_texture();
 
+	void convert_spectrum_to_linear_srgb(double &r, double &g, double &b);
 	atmosphere_error_t init_functions(CUmodule &cuda_module);
 	atmosphere_error_t compute_transmittance(double* lambdas, double* luminance_from_radiance, bool blend, int num_scattering_orders);
 	DensityProfile adjust_units(DensityProfile density);
@@ -170,6 +170,9 @@ private:
 	bool m_half_precision = false;
 	
 public:
+
+	float m_exposure;
+	bool m_do_white_balance;
 	bool m_use_constant_solar_spectrum = true;
 	bool m_use_ozone = true;
 	LUMINANCE m_use_luminance;
